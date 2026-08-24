@@ -32,11 +32,22 @@ export default function PricingPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [success, setSuccess] = useState("");
 
+  const ensureSession = async () => {
+    try {
+      await backendRequest("/api/auth/session");
+      return true;
+    } catch {
+      setError("Sesi login diperlukan. Silakan login dulu sebagai owner, lalu buka kembali halaman ini.");
+      return false;
+    }
+  };
+
   const handleCoupon = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setSuccess("");
     if (!coupon.trim()) return setError("Masukkan kode kupon terlebih dahulu.");
+    if (!(await ensureSession())) return;
     setCouponLoading(true);
     try {
       const result = await backendRequest<{ message: string }>("/api/subscription/coupon", {
@@ -57,6 +68,10 @@ export default function PricingPage() {
   const handleUpgrade = async () => {
     setLoading(true);
     setError("");
+    if (!(await ensureSession())) {
+      setLoading(false);
+      return;
+    }
     try {
       const result = await backendRequest<{
         redirectUrl?: string;
@@ -209,6 +224,10 @@ export default function PricingPage() {
         <div style={{ textAlign: "center", marginTop: 32 }}>
           <a href="/login" style={{ color: "#047857", fontWeight: 600 }}>
             ← Kembali ke login
+          </a>
+          <span style={{ color: "#94a3b8", margin: "0 10px" }}>·</span>
+          <a href="/register" style={{ color: "#047857", fontWeight: 600 }}>
+            Daftar akun
           </a>
         </div>
       </section>

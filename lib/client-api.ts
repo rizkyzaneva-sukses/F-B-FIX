@@ -7,12 +7,13 @@
  * route ever validated it, so it only looked like protection.
  */
 export async function backendRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isFormData = init.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...((init.headers as Record<string, string>) || {}),
   };
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(path, { credentials: "same-origin", ...init, headers });
   const result = (await response.json().catch(() => null)) as {
     data?: T;
     error?: { message?: string };

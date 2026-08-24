@@ -45,6 +45,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import * as XLSX from "xlsx";
 import { backendRequest } from "@/lib/client-api";
 
 type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings";
@@ -135,6 +136,19 @@ const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "curre
 const shortRupiah = (value: number) => value >= 1000000 ? `Rp ${(value / 1000000).toFixed(1).replace(".", ",")} jt` : value >= 1000 ? `Rp ${(value / 1000).toFixed(0)} rb` : rupiah(value);
 const dateLabel = (value: string) => new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
 const initials = (value: string) => value.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+
+type ImportKind = "PRODUCT" | "RAW_MATERIAL";
+
+function downloadItemTemplate(kind: ImportKind) {
+  const rows = kind === "PRODUCT"
+    ? [{ nama: "Sambal Bawang 150g", kategori: "Sambal", satuan: "jar", stok_awal: 0, harga_jual: 28000 }]
+    : [{ nama: "Cabai rawit merah", satuan: "kg", stok_awal: 0, harga_beli_terakhir: 68000 }];
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  worksheet["!cols"] = Object.keys(rows[0]).map((key) => ({ wch: Math.max(16, key.length + 4) }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, kind === "PRODUCT" ? "Produk Jadi" : "Bahan Baku");
+  XLSX.writeFile(workbook, kind === "PRODUCT" ? "template-import-produk.xlsx" : "template-import-bahan-baku.xlsx");
+}
 
 const CASHIER_VIEWS: View[] = ["pos", "settings"];
 
@@ -506,6 +520,20 @@ export default function Home() {
     notify("Data dummy berhasil dimuat.");
   };
 
+  const importItems = async (file: File, kind: ImportKind) => {
+    if (!BACKEND_ENABLED) return notify("Import XLSX tersedia setelah backend diaktifkan.", "error");
+    const formData = new FormData();
+    formData.append("type", kind);
+    formData.append("file", file);
+    try {
+      const result = await backendRequest<{ imported: number }>('/api/items/import', { method: "POST", body: formData });
+      notify(`${result.imported} ${kind === "PRODUCT" ? "produk" : "bahan baku"} berhasil diimport. Memuat ulang data...`);
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Import XLSX gagal.", "error");
+    }
+  };
+
   return (
     <div className={`app-shell ${dark ? "dark-mode" : ""}`}>
       <Sidebar view={view} navigate={navigate} onPlan={() => window.location.href = "/pricing"} salesCount={salesCount} plan={plan} account={account} />
@@ -520,8 +548,8 @@ export default function Home() {
         </header>
         {view === "dashboard" && <Dashboard products={products} materials={materials} expenses={expenses} receivables={receivables} sales={sales} salesCount={salesCount} dueReceivables={dueReceivables} dashboardData={dashboardData} plan={plan} businessName={businessName} navigate={navigate} />}
         {view === "pos" && <POS products={products} cart={cart} total={cartTotal} onAdd={addToCart} onChangeQty={changeCartQty} onPay={() => setModal("payment")} onNewProduct={() => openCreate("product")} />}
-        {view === "products" && <ItemList title="Produk Jadi" description="Kelola produk siap jual dan pantau stoknya." items={products} kind="product" onAdd={() => openCreate("product")} onNavigate={navigate} />}
-        {view === "materials" && <MaterialList materials={materials} onAdd={() => openCreate("material")} />}
+        {view === "products" && <ItemList title="Produk Jadi" description="Kelola produk siap jual dan pantau stoknya." items={products} kind="product" onAdd={() => openCreate("product")} onNavigate={navigate} onImport={(file) => importItems(file, "PRODUCT")} onDownloadTemplate={() => downloadItemTemplate("PRODUCT")} />}
+        {view === "materials" && <MaterialList materials={materials} onAdd={() => openCreate("material")} onImport={(file) => importItems(file, "RAW_MATERIAL")} onDownloadTemplate={() => downloadItemTemplate("RAW_MATERIAL")} />}
         {view === "production" && <ProductionView batches={batches} products={products} materials={materials} onAdd={() => openCreate("production")} />}
          {view === "purchases" && <PurchaseView2 purchases={purchases} materials={materials} onAdd={() => openCreate("purchase")} onPay={payPayable} />}
         {view === "parties" && <PartyView parties={parties} onAdd={() => openCreate("party")} />}
@@ -647,16 +675,16 @@ function POS({ products, cart, total, onAdd, onChangeQty, onPay, onNewProduct }:
   return <main className="pos-page"><div className="pos-layout"><section><div className="pos-heading"><div><p className="eyebrow">Shift pagi · kasir aktif</p><h1>Mulai transaksi</h1><p>Pilih produk atau cari nama menu di bawah.</p></div><div className="pos-controls"><button className="button button-secondary" onClick={onNewProduct}><Plus size={16} /><span>Produk baru</span></button><button className="icon-button" aria-label="Pengaturan POS"><SlidersHorizontal size={17} /></button></div></div><div className="search-field pos-search"><Search size={17} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari produk..." aria-label="Cari produk" /></div><div className="category-row">{categories.map((item) => <button key={item} className={`category-chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="product-grid">{filtered.map((product) => <button className="product-card" key={product.id} onClick={() => onAdd(product)} disabled={!product.active}><div className="product-card-top"><span className="product-emoji">{product.emoji}</span><span className={`badge ${product.stock <= 5 ? "badge-amber" : "badge-green"}`}>{product.stock} {product.unit}</span></div><div><p className="product-name">{product.name}</p><span className="product-price">{rupiah(product.price)}</span></div></button>)}{!filtered.length && <div className="empty-state"><Search size={24} /><strong>Produk tidak ditemukan</strong><p>Coba kata kunci atau kategori lain.</p></div>}</div></section><aside className="card cart-panel"><div className="cart-header"><div><h2>Keranjang</h2><span style={{ color: "var(--muted)", fontSize: 11 }}>Transaksi baru</span></div><span className="cart-count">{cart.reduce((sum, item) => sum + item.qty, 0)} item</span></div><div className="cart-items">{cart.length ? cart.map((item) => <div className="cart-item" key={item.id}><div><strong>{item.name}</strong><small>{rupiah(item.price)} / {item.unit}</small><div className="qty-control"><button className="qty-button" onClick={() => onChangeQty(item.id, -1)} aria-label={`Kurangi ${item.name}`}><Minus size={14} /></button><span className="qty-number">{item.qty}</span><button className="qty-button" onClick={() => onChangeQty(item.id, 1)} aria-label={`Tambah ${item.name}`}><Plus size={14} /></button></div></div><span className="cart-subtotal">{rupiah(item.price * item.qty)}</span></div>) : <div className="empty-state"><ShoppingCart size={25} /><strong>Keranjang masih kosong</strong><p>Tap produk di sebelah kiri untuk mulai menambahkan pesanan.</p></div>}</div><div className="cart-footer"><div className="total-row"><span>Total tagihan</span><strong>{rupiah(total)}</strong></div><button className="button button-primary" style={{ width: "100%", minHeight: 48 }} disabled={!cart.length} onClick={onPay}>Bayar sekarang <ChevronRight size={17} /></button></div></aside></div></main>;
 }
 
-function ItemList({ title, description, items, kind, onAdd, onNavigate }: { title: string; description: string; items: Product[]; kind: "product"; onAdd: () => void; onNavigate: (view: View) => void }) {
+function ItemList({ title, description, items, kind, onAdd, onNavigate, onImport, onDownloadTemplate }: { title: string; description: string; items: Product[]; kind: "product"; onAdd: () => void; onNavigate: (view: View) => void; onImport: (file: File) => void; onDownloadTemplate: () => void }) {
   const [search, setSearch] = useState("");
   const filtered = items.filter((item) => item.name.toLowerCase().includes(search.toLowerCase()));
-  return <main className="page"><PageHeading eyebrow="Master data" title={title} description={description} action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Tambah produk</button>} /><div className="toolbar"><div className="search-field"><Search size={16} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari produk..." aria-label="Cari produk" /></div><button className="button button-secondary"><SlidersHorizontal size={15} />Filter</button></div><section className="card table-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th>Harga jual</th><th>HPP / unit</th><th className="text-right">Stok</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><div className="item-cell"><span className="item-avatar">{item.emoji}</span><div><strong>{item.name}</strong><span>Satuan {item.unit}</span></div></div></td><td>{item.category}</td><td className="table-primary">{rupiah(item.price)}</td><td>{item.cogs ? rupiah(item.cogs) : <span className="table-muted">Belum ada</span>}</td><td className="text-right table-primary">{item.stock} {item.unit}</td><td><span className="badge badge-green">Aktif</span></td><td className="text-right"><button className="button button-ghost" onClick={() => onNavigate("settings")}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></section></main>;
+  return <main className="page"><PageHeading eyebrow="Master data" title={title} description={description} action={<><button className="button button-secondary" onClick={onDownloadTemplate}><FileDown size={16} />Template XLSX</button><label className="button button-secondary" style={{ cursor: "pointer" }}><FileDown size={16} />Import XLSX<input type="file" accept=".xlsx,.xls" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImport(file); event.currentTarget.value = ""; }} /></label><button className="button button-primary" onClick={onAdd}><Plus size={17} />Tambah produk</button></>} /><div className="toolbar"><div className="search-field"><Search size={16} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari produk..." aria-label="Cari produk" /></div><button className="button button-secondary"><SlidersHorizontal size={15} />Filter</button></div><section className="card table-wrap"><table><thead><tr><th>Produk</th><th>Kategori</th><th>Harga jual</th><th>HPP / unit</th><th className="text-right">Stok</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><div className="item-cell"><span className="item-avatar">{item.emoji}</span><div><strong>{item.name}</strong><span>Satuan {item.unit}</span></div></div></td><td>{item.category}</td><td className="table-primary">{rupiah(item.price)}</td><td>{item.cogs ? rupiah(item.cogs) : <span className="table-muted">Belum ada</span>}</td><td className="text-right table-primary">{item.stock} {item.unit}</td><td><span className="badge badge-green">Aktif</span></td><td className="text-right"><button className="button button-ghost" onClick={() => onNavigate("settings")}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></section></main>;
 }
 
-function MaterialList({ materials, onAdd }: { materials: Material[]; onAdd: () => void }) {
+function MaterialList({ materials, onAdd, onImport, onDownloadTemplate }: { materials: Material[]; onAdd: () => void; onImport: (file: File) => void; onDownloadTemplate: () => void }) {
   const [search, setSearch] = useState("");
   const filtered = materials.filter((item) => item.name.toLowerCase().includes(search.toLowerCase()));
-  return <main className="page"><PageHeading eyebrow="Master data" title="Bahan baku" description="Pastikan bahan utama selalu tersedia sebelum produksi dimulai." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Tambah bahan</button>} /><div className="callout warning" style={{ marginBottom: 18 }}><Leaf size={17} /><div><strong>{materials.filter((item) => item.stock <= 2).length} bahan perlu diperiksa</strong><p>Restock bahan yang berada di bawah batas aman produksi.</p></div></div><div className="toolbar"><div className="search-field"><Search size={16} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari bahan baku..." aria-label="Cari bahan baku" /></div></div><section className="card table-wrap"><table><thead><tr><th>Bahan baku</th><th>Supplier terakhir</th><th>Harga beli terakhir</th><th className="text-right">Stok tersedia</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><div className="item-cell"><span className="item-avatar"><Leaf size={15} /></span><div><strong>{item.name}</strong><span>Satuan {item.unit}</span></div></div></td><td>{item.supplier}</td><td className="table-primary">{rupiah(item.lastBuy)} / {item.unit}</td><td className={`text-right table-primary ${item.stock <= 2 ? "negative" : ""}`}>{item.stock} {item.unit}</td><td><span className={`badge ${item.stock <= 2 ? "badge-amber" : "badge-green"}`}>{item.stock <= 2 ? "Kritis" : "Aman"}</span></td><td className="text-right"><button className="button button-ghost"><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></section></main>;
+  return <main className="page"><PageHeading eyebrow="Master data" title="Bahan baku" description="Pastikan bahan utama selalu tersedia sebelum produksi dimulai." action={<><button className="button button-secondary" onClick={onDownloadTemplate}><FileDown size={16} />Template XLSX</button><label className="button button-secondary" style={{ cursor: "pointer" }}><FileDown size={16} />Import XLSX<input type="file" accept=".xlsx,.xls" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImport(file); event.currentTarget.value = ""; }} /></label><button className="button button-primary" onClick={onAdd}><Plus size={17} />Tambah bahan</button></>} /><div className="callout warning" style={{ marginBottom: 18 }}><Leaf size={17} /><div><strong>{materials.filter((item) => item.stock <= 2).length} bahan perlu diperiksa</strong><p>Restock bahan yang berada di bawah batas aman produksi.</p></div></div><div className="toolbar"><div className="search-field"><Search size={16} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari bahan baku..." aria-label="Cari bahan baku" /></div></div><section className="card table-wrap"><table><thead><tr><th>Bahan baku</th><th>Supplier terakhir</th><th>Harga beli terakhir</th><th className="text-right">Stok tersedia</th><th>Status</th><th></th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><div className="item-cell"><span className="item-avatar"><Leaf size={15} /></span><div><strong>{item.name}</strong><span>Satuan {item.unit}</span></div></div></td><td>{item.supplier}</td><td className="table-primary">{rupiah(item.lastBuy)} / {item.unit}</td><td className={`text-right table-primary ${item.stock <= 2 ? "negative" : ""}`}>{item.stock} {item.unit}</td><td><span className={`badge ${item.stock <= 2 ? "badge-amber" : "badge-green"}`}>{item.stock <= 2 ? "Kritis" : "Aman"}</span></td><td className="text-right"><button className="button button-ghost"><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></section></main>;
 }
 
 function ProductionView({ batches, products, materials, onAdd }: { batches: Batch[]; products: Product[]; materials: Material[]; onAdd: () => void }) {
