@@ -8,19 +8,32 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in EasyPanel}
     volumes:
       - dapurkasir_pgdata:/var/lib/postgresql/data
-      - ./db/migrations/001_dapurkasir.sql:/docker-entrypoint-initdb.d/001_dapurkasir.sql:ro
-      - ./db/migrations/002_accounting_features.sql:/docker-entrypoint-initdb.d/002_accounting_features.sql:ro
-      - ./db/migrations/003_security_fixes.sql:/docker-entrypoint-initdb.d/003_security_fixes.sql:ro
-      - ./db/migrations/004_email_verification.sql:/docker-entrypoint-initdb.d/004_email_verification.sql:ro
-      - ./db/migrations/005_fix_checkout_atomicity.sql:/docker-entrypoint-initdb.d/005_fix_checkout_atomicity.sql:ro
-      - ./db/migrations/006_fix_purchase_payable.sql:/docker-entrypoint-initdb.d/006_fix_purchase_payable.sql:ro
-      - ./db/migrations/007_fix_production_atomicity.sql:/docker-entrypoint-initdb.d/007_fix_production_atomicity.sql:ro
-      - ./db/migrations/008_subscription_system.sql:/docker-entrypoint-initdb.d/008_subscription_system.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dapurkasir} -d ${POSTGRES_DB:-dapurkasir}"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Applies every db/migrations/*.sql in filename order on each deploy. All migrations
+  # are written to be re-runnable, so this is safe to repeat. Mounting them into
+  # /docker-entrypoint-initdb.d only ever ran them into a brand-new volume, which meant
+  # schema changes silently never reached an existing database.
+  migrate:
+    image: postgres:16-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in EasyPanel}
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        find /migrations -name '*.sql' | sort |
+        xargs -I FILE psql -v ON_ERROR_STOP=1 --echo-errors
+        -h postgres -U ${POSTGRES_USER:-dapurkasir} -d ${POSTGRES_DB:-dapurkasir} -f FILE
 
   postgrest:
     image: postgrest/postgrest:v12.2.12
@@ -28,6 +41,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       PGRST_DB_URI: postgres://${POSTGRES_USER:-dapurkasir}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dapurkasir}
       PGRST_DB_SCHEMA: public

@@ -1,4 +1,6 @@
-import { SignJWT, jwtVerify, type JWTPayload } from "jose";
+import { SignJWT } from "jose/jwt/sign";
+import { jwtVerify } from "jose/jwt/verify";
+import type { JWTPayload } from "jose";
 import { cookies } from "next/headers";
 
 export type Session = JWTPayload & {

@@ -21,7 +21,9 @@ create index if not exists idx_verification_tokens_user on verification_tokens (
 alter table verification_tokens enable row level security;
 
 -- Only service_role can manage tokens (no direct user access)
+drop policy if exists tenant_select on verification_tokens;
 create policy tenant_select on verification_tokens for select using (is_service());
+drop policy if exists tenant_write on verification_tokens;
 create policy tenant_write on verification_tokens for all using (is_service()) with check (is_service());
 
 grant select, insert, update on verification_tokens to service_role;

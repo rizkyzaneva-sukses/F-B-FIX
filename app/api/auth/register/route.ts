@@ -1,8 +1,9 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
 import { setSession } from "@/lib/auth";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 const MAX_REGISTRATIONS_PER_IP = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -30,100 +31,79 @@ export async function POST(request: Request) {
       return apiError("Nama usaha wajib diisi.", 422, "VALIDATION_ERROR");
     }
 
-    // Rate limit registrations per email
-    const limit = checkRateLimit(`register:${email}`, MAX_REGISTRATIONS_PER_IP, REGISTRATION_WINDOW_MS);
+    // Rate limit by IP — limiting per email lets one client register unlimited
+    // businesses just by varying the address.
+    const limit = checkRateLimit(
+      `register:${clientIp(request)}`,
+      MAX_REGISTRATIONS_PER_IP,
+      REGISTRATION_WINDOW_MS
+    );
     if (!limit.allowed) {
       return apiError("Terlalu banyak pendaftaran. Coba lagi nanti.", 429, "RATE_LIMITED");
     }
 
-    // Check if email already exists
-    const existing = await postgrestJson<Array<{ id: string }>>(
-      `/app_users?email=eq.${encodeURIComponent(email)}&select=id`
-    );
-    if (existing.length > 0) {
-      return apiError("Email sudah terdaftar.", 422, "EMAIL_EXISTS");
-    }
-
-    // Create business
-    const business = (
-      await postgrestJson<Array<{ id: string; name: string }>>(
-        "/businesses",
-        {
-          method: "POST",
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify({ name: businessName }),
-        }
-      )
-    )[0];
-
-    // Create owner user
-    const user = (
-      await postgrestJson<
-        Array<{ id: string; business_id: string; name: string; role: "OWNER" }>
-      >(
-        "/app_users",
-        {
-          method: "POST",
-          headers: { Prefer: "return=representation" },
-          body: JSON.stringify({
-            business_id: business.id,
-            email,
-            name: body.name?.trim() || email.split("@")[0],
-            password_hash: await bcrypt.hash(password, 12),
-            role: "OWNER",
-            email_verified: false,
-          }),
-        }
-      )
-    )[0];
-
-    // Seed default units
-    await postgrestJson("/rpc/seed_default_units", {
-      method: "POST",
-      body: JSON.stringify({ p_business_id: business.id }),
-    });
-
-    // Send verification email (fire-and-forget)
-    const appUrl = process.env.APP_URL || "http://localhost:3000";
-    import("@/lib/email").then(({ sendEmail, verificationEmailHtml }) => {
-      const crypto = require("crypto");
-      const token = crypto.randomBytes(32).toString("hex");
-      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-      postgrestJson("/verification_tokens", {
+    // One transaction: business + owner + default units. Previously these were three
+    // separate calls, so a failure partway left an orphan business row behind.
+    let created: { business_id: string; user_id: string };
+    try {
+      created = await postgrestJson<{ business_id: string; user_id: string }>("/rpc/register_business", {
         method: "POST",
         body: JSON.stringify({
-          user_id: user.id,
-          business_id: business.id,
-          token_hash: tokenHash,
-          purpose: "email_verify",
-          expires_at: expiresAt,
+          p_business_name: businessName,
+          p_email: email,
+          p_name: body.name?.trim() || "",
+          p_password_hash: await bcrypt.hash(password, 12),
         }),
-      })
-        .then(() =>
-          sendEmail({
-            to: email,
-            subject: "Verifikasi Email DapurKasir",
-            html: verificationEmailHtml(
-              user.name,
-              `${appUrl}/api/auth/verify-email?token=${token}`
-            ),
-          })
-        )
-        .catch(() => undefined); // Don't fail registration if email fails
-    });
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("sudah terdaftar")) {
+        return apiError("Email sudah terdaftar.", 422, "EMAIL_EXISTS");
+      }
+      throw error;
+    }
 
-    // Set session
+    const displayName = body.name?.trim() || email.split("@")[0];
+
+    // Send verification email without blocking signup, but never swallow the reason.
+    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    void (async () => {
+      try {
+        const { sendEmail, verificationEmailHtml } = await import("@/lib/email");
+        const token = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        await postgrestJson("/verification_tokens", {
+          method: "POST",
+          body: JSON.stringify({
+            user_id: created.user_id,
+            business_id: created.business_id,
+            token_hash: tokenHash,
+            purpose: "email_verify",
+            expires_at: expiresAt,
+          }),
+        });
+
+        await sendEmail({
+          to: email,
+          subject: "Verifikasi Email DapurKasir",
+          html: verificationEmailHtml(displayName, `${appUrl}/api/auth/verify-email?token=${token}`),
+        });
+      } catch (error) {
+        console.error("[register] verification email failed:", error);
+      }
+    })();
+
     await setSession({
-      user_id: user.id,
-      business_id: user.business_id,
+      user_id: created.user_id,
+      business_id: created.business_id,
       role: "OWNER",
-      name: user.name,
+      name: displayName,
       email,
     });
 
-    return apiData({ user_id: user.id, business_id: business.id }, 201);
+    return apiData({ user_id: created.user_id, business_id: created.business_id }, 201);
   } catch (error) {
     return apiError(
       error instanceof Error ? error.message : "Registrasi gagal.",

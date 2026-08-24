@@ -20,7 +20,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         auth.token
       ),
       postgrestJson<Array<Record<string, unknown>>>(
-        `/app_users?select=*&business_id=eq.${id}&order=created_at`,
+        // Never select=* here — that ships password_hash and pin_hash to the browser.
+        `/app_users?select=id,name,email,role,is_active,email_verified,created_at&business_id=eq.${id}&order=created_at`,
         {},
         auth.token
       ),

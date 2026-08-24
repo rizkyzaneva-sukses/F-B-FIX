@@ -1,6 +1,7 @@
 import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
 import { requireOwner } from "@/lib/route-auth";
+import { dayEndExclusive, dayStart } from "@/lib/query";
 
 export async function GET(request: Request) {
   const auth = await requireOwner();
@@ -14,12 +15,12 @@ export async function GET(request: Request) {
     const [sales, lines, expenses, capital, payables, receivables, purchases, inventoryRows] =
       await Promise.all([
         postgrestJson<Array<{ total: string }>>(
-          `/transactions?select=total&transaction_type=eq.SALE&occurred_at=gte.${from}T00:00:00&occurred_at=lte.${to}T23:59:59`,
+          `/transactions?select=total&transaction_type=eq.SALE&occurred_at=gte.${dayStart(from)}&occurred_at=lt.${dayEndExclusive(to)}`,
           {},
           auth.token
         ),
         postgrestJson<Array<{ qty: string; cogs_at_sale: string }>>(
-          `/transaction_items?select=qty,cogs_at_sale,transactions!inner(transaction_type,occurred_at)&transactions.transaction_type=eq.SALE&transactions.occurred_at=gte.${from}T00:00:00&transactions.occurred_at=lte.${to}T23:59:59`,
+          `/transaction_items?select=qty,cogs_at_sale,transactions!inner(transaction_type,occurred_at)&transactions.transaction_type=eq.SALE&transactions.occurred_at=gte.${dayStart(from)}&transactions.occurred_at=lt.${dayEndExclusive(to)}`,
           {},
           auth.token
         ),
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
           auth.token
         ),
         postgrestJson<Array<{ paid_amount: string }>>(
-          `/transactions?select=paid_amount&transaction_type=eq.PURCHASE&occurred_at=gte.${from}T00:00:00&occurred_at=lte.${to}T23:59:59`,
+          `/transactions?select=paid_amount&transaction_type=eq.PURCHASE&occurred_at=gte.${dayStart(from)}&occurred_at=lt.${dayEndExclusive(to)}`,
           {},
           auth.token
         ),

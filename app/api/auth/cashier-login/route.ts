@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { apiData, apiError } from "@/lib/api-response";
 import { setSession } from "@/lib/auth";
 import { postgrestJson } from "@/lib/postgrest";
-import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, resetRateLimit, clientIp } from "@/lib/rate-limit";
 
 const MAX_PIN_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -14,8 +14,9 @@ export async function POST(request: Request) {
       return apiError("Business ID dan PIN 6 digit wajib diisi.", 422, "VALIDATION_ERROR");
     }
 
-    // Rate limit per business_id (prevents brute force on any cashier PIN)
-    const rateLimitKey = `cashier-login:${business_id}`;
+    // Keyed on business + caller IP. Keying on business alone let anyone lock every
+    // cashier of a store out for 15 minutes with five wrong PINs.
+    const rateLimitKey = `cashier-login:${business_id}:${clientIp(request)}`;
     const limit = checkRateLimit(rateLimitKey, MAX_PIN_ATTEMPTS, LOCKOUT_MS);
     if (!limit.allowed) {
       const retryMinutes = Math.ceil(limit.retryAfterMs / 60000);

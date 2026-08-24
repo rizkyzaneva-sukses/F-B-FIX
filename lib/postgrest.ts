@@ -1,4 +1,4 @@
-import { SignJWT } from "jose";
+import { SignJWT } from "jose/jwt/sign";
 
 /**
  * Read a URL from env and tolerate the most common EasyPanel/dotenv mistake:

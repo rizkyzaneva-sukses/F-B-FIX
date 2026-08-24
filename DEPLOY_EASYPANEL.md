@@ -35,13 +35,17 @@ Service `postgrest` wajib jalan dengan `PGRST_JWT_ROLE_CLAIM_KEY=.db_role` (suda
 
 ## 4. Migrasi database
 
-Migration pertama dijalankan otomatis hanya ketika volume PostgreSQL masih kosong. Untuk perubahan migration berikutnya, masuk ke terminal service PostgreSQL dan jalankan file SQL secara eksplisit:
+Compose punya service `migrate` yang menjalankan **seluruh** file di `db/migrations/` secara berurutan setiap kali deploy. Semua migration ditulis idempoten (`create table if not exists`, `create or replace function`, `drop policy if exists` sebelum `create policy`), jadi aman dijalankan berulang.
 
-```bash
-psql "$DATABASE_URL" -f /path/001_dapurkasir.sql
-```
+Service `postgrest` menunggu `migrate` selesai sukses sebelum start. Kalau ada migration yang gagal, deploy berhenti di situ dan errornya kelihatan di log service `migrate` — bukan diam-diam terlewat seperti sebelumnya.
 
-Sebelum migration production, backup volume/database terlebih dahulu.
+> Versi lama me-mount file SQL ke `/docker-entrypoint-initdb.d`, yang hanya jalan saat volume PostgreSQL masih kosong. Akibatnya setiap perubahan skema tidak pernah sampai ke database yang sudah berisi data.
+
+Sebelum deploy production, tetap backup volume/database terlebih dahulu.
+
+### Kalau menu kasir menolak transaksi
+
+Migration `009_cashier_and_atomicity.sql` yang membuat `checkout_pos` bisa dipakai role KASIR. Kalau kasir masih kena error RLS, pastikan service `migrate` benar-benar jalan pada deploy terakhir.
 
 ## 5. Alat bantu trial (isi/hapus data dummy)
 
@@ -64,6 +68,7 @@ Variable itu mematikan API (`/api/dev/seed`, `/api/dev/reset`) sekaligus menyemb
 
 1. Buka `/register` untuk membuat owner dan bisnis pertama.
 2. Login melalui `/login`.
+   Untuk kasir: buka **Pengaturan → Tim kasir**, tambahkan kasir dengan PIN 6 angka, lalu salin **tautan masuk kasir** dan buka di perangkat kasir. Perangkat itu akan mengingat kode tokonya, jadi kasir cukup memasukkan PIN.
 3. Buat produk, bahan baku, supplier, dan pelanggan.
 4. Buat batch produksi.
 5. Jalankan transaksi dari menu Kasir POS.
@@ -71,6 +76,10 @@ Variable itu mematikan API (`/api/dev/seed`, `/api/dev/reset`) sekaligus menyemb
 ## 7. Catatan keamanan
 
 - RLS membatasi data berdasarkan `business_id` dari JWT.
+- Request POST/PATCH/DELETE lintas situs ditolak middleware lewat pemeriksaan header `Origin` (kecuali webhook, yang diverifikasi lewat signature Midtrans).
+- Header keamanan (CSP, `X-Frame-Options`, HSTS, `Referrer-Policy`) dipasang di `next.config.ts`.
+- Container `web` berjalan sebagai user `node`, bukan root.
+- Halaman `/admin` dijaga middleware berdasarkan `ADMIN_EMAILS`, bukan hanya API-nya.
 - Password owner dan PIN kasir disimpan sebagai bcrypt hash.
 - Cookie session bersifat `httpOnly`, `sameSite=lax`, dan `secure` pada production.
 - Service role hanya dipakai server-side saat proses registrasi dan tidak dikirim ke browser.

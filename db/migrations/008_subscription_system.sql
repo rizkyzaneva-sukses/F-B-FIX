@@ -59,13 +59,19 @@ alter table subscriptions enable row level security;
 alter table payments enable row level security;
 alter table upgrade_requests enable row level security;
 
+drop policy if exists tenant_select on subscriptions;
 create policy tenant_select on subscriptions for select using (is_service() or business_id = current_business_id());
+drop policy if exists tenant_write on subscriptions;
 create policy tenant_write on subscriptions for all using (is_service()) with check (is_service());
 
+drop policy if exists tenant_select on payments;
 create policy tenant_select on payments for select using (is_service() or business_id = current_business_id());
+drop policy if exists tenant_write on payments;
 create policy tenant_write on payments for all using (is_service()) with check (is_service());
 
+drop policy if exists tenant_select on upgrade_requests;
 create policy tenant_select on upgrade_requests for select using (is_service() or business_id = current_business_id());
+drop policy if exists tenant_write on upgrade_requests;
 create policy tenant_write on upgrade_requests for all using (is_service() or (business_id = current_business_id() and request_claim('role') = 'OWNER')) with check (is_service() or business_id = current_business_id());
 
 grant select, insert, update on subscriptions, payments, upgrade_requests to anon, authenticated, service_role;

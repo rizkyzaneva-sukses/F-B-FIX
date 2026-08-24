@@ -1,6 +1,10 @@
 import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
 import { requireSession } from "@/lib/route-auth";
+import { dayEndExclusive, dayStart, isIsoDate, pickEnum, today } from "@/lib/query";
+
+const PAYMENT_STATUSES = ["LUNAS", "SEBAGIAN", "BELUM_LUNAS"] as const;
+const PAYMENT_METHODS = ["TUNAI", "QRIS", "TRANSFER", "HUTANG"] as const;
 
 export async function GET(request: Request) {
   const auth = await requireSession();
@@ -8,29 +12,31 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
     const filters = [
       `select=*,parties(name),app_users(name)`,
       `order=occurred_at.desc`,
-      `limit=${Math.min(100, Number(url.searchParams.get("limit") || 50))}`,
+      `limit=${limit}`,
     ];
 
-    // Date filters
+    // Only well-formed values reach the query string — a raw param could otherwise
+    // append its own PostgREST filters.
     const from = url.searchParams.get("dateFrom");
     const to = url.searchParams.get("dateTo");
+    if (isIsoDate(from)) filters.push(`occurred_at=gte.${dayStart(from)}`);
+    if (isIsoDate(to)) filters.push(`occurred_at=lt.${dayEndExclusive(to)}`);
 
-    if (from) filters.push(`occurred_at=gte.${from}T00:00:00`);
-    if (to) filters.push(`occurred_at=lte.${to}T23:59:59`);
-
-    // Status and method filters
-    if (url.searchParams.get("status")) filters.push(`payment_status=eq.${url.searchParams.get("status")}`);
-    if (url.searchParams.get("method")) filters.push(`payment_method=eq.${url.searchParams.get("method")}`);
+    const status = pickEnum(url.searchParams.get("status"), PAYMENT_STATUSES);
+    const method = pickEnum(url.searchParams.get("method"), PAYMENT_METHODS);
+    if (status) filters.push(`payment_status=eq.${status}`);
+    if (method) filters.push(`payment_method=eq.${method}`);
 
     // KASIR can ONLY see their own transactions from today — enforced server-side
     if (auth.session.role === "KASIR") {
+      const day = today();
       filters.push(`created_by=eq.${auth.session.user_id}`);
-      const today = new Date().toISOString().slice(0, 10);
-      filters.push(`occurred_at=gte.${today}T00:00:00`);
-      filters.push(`occurred_at=lte.${today}T23:59:59`);
+      filters.push(`occurred_at=gte.${dayStart(day)}`);
+      filters.push(`occurred_at=lt.${dayEndExclusive(day)}`);
     }
 
     return apiData(await postgrestJson(`/transactions?${filters.join("&")}`, {}, auth.token));

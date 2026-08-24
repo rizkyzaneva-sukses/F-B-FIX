@@ -1,6 +1,7 @@
 import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson, postgrestCount } from "@/lib/postgrest";
 import { requireSession } from "@/lib/route-auth";
+import { dayEndExclusive, dayStart } from "@/lib/query";
 
 export async function GET() {
   const auth = await requireSession();
@@ -24,7 +25,7 @@ export async function GET() {
     ] = await Promise.all([
       // Today's sales total
       postgrestJson<Array<{ total: string }>>(
-        `/transactions?select=total&transaction_type=eq.SALE&occurred_at=gte.${today}T00:00:00&occurred_at=lte.${today}T23:59:59`,
+        `/transactions?select=total&transaction_type=eq.SALE&occurred_at=gte.${dayStart(today)}&occurred_at=lt.${dayEndExclusive(today)}`,
         {},
         auth.token
       ),
@@ -80,7 +81,7 @@ export async function GET() {
     let todayCogs = 0;
     if (todaySaleIds.length > 0) {
       const cogsItems = await postgrestJson<Array<{ qty: string; cogs_at_sale: string }>>(
-        `/transaction_items?select=qty,cogs_at_sale,transactions!inner(transaction_type,occurred_at)&transactions.transaction_type=eq.SALE&transactions.occurred_at=gte.${today}T00:00:00&transactions.occurred_at=lte.${today}T23:59:59`,
+        `/transaction_items?select=qty,cogs_at_sale,transactions!inner(transaction_type,occurred_at)&transactions.transaction_type=eq.SALE&transactions.occurred_at=gte.${dayStart(today)}&transactions.occurred_at=lt.${dayEndExclusive(today)}`,
         {},
         auth.token
       );

@@ -53,3 +53,19 @@ export function checkRateLimit(key: string, maxAttempts: number, windowMs: numbe
 export function resetRateLimit(key: string): void {
   store.delete(key);
 }
+
+/**
+ * Best-effort client IP for rate-limit keys.
+ *
+ * Behind EasyPanel/Traefik the real address arrives in x-forwarded-for; the first
+ * entry is the client, the rest are proxies. Only trust this for rate limiting —
+ * a direct caller can forge the header, so it must never gate authorisation.
+ */
+export function clientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
