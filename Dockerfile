@@ -18,6 +18,11 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# psql + the migration files, so deployments that don't use docker-compose.yml (and
+# therefore never run its one-shot `migrate` service) can apply migrations from this
+# container's terminal: `sh db/migrate.sh`
+RUN apk add --no-cache postgresql-client
+COPY --from=builder --chown=node:node /app/db ./db
 # Nothing in the runtime image needs root. `node` is provided by the base image.
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/.next/standalone ./
