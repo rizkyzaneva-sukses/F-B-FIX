@@ -94,7 +94,10 @@ export async function POST() {
       return apiError("Bisnis sudah dalam paket PRO.", 409, "ALREADY_PRO");
     }
 
-    // Create subscription record
+    // Create subscription record. Deliberately uses the admin/service token, not
+    // auth.token — RLS on `subscriptions` only allows service_role to write (migration
+    // 008), so an owner can never self-grant PRO by inserting rows directly; only the
+    // server can, after real payment confirmation via the Midtrans webhook.
     const subscription = (
       await postgrestJson<Array<{ id: string }>>(
         "/subscriptions?select=id",
@@ -104,14 +107,15 @@ export async function POST() {
           body: JSON.stringify({
             business_id: auth.session.business_id,
             plan: "PRO",
-            status: "PENDING",
+            status: "TRIAL",
             payment_gateway: "midtrans",
           }),
         }
       )
     )[0];
 
-    // Create payment record
+    // Create payment record (service token — same reasoning as above; `payments` RLS
+    // also restricts writes to service_role).
     const orderId = `DK-${auth.session.business_id.slice(0, 8)}-${Date.now()}`;
     const payment = (
       await postgrestJson<Array<{ id: string }>>(
@@ -156,7 +160,7 @@ export async function POST() {
       },
     });
 
-    // Update payment with snap token
+    // Update payment with snap token (service token, same as the insert above)
     await postgrestJson(`/payments?id=eq.${payment.id}`, {
       method: "PATCH",
       body: JSON.stringify({
