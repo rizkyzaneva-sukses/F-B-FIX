@@ -3,7 +3,16 @@ create extension if not exists pgcrypto;
 do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
 do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
 do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$;
-grant anon, authenticated, service_role to dapurkasir;
+-- PostgREST connects as this user and then SET ROLEs into anon/authenticated/
+-- service_role, which only works if the connecting user is a member of them.
+-- Granting to current_user instead of a hardcoded name keeps this working whatever
+-- the database user is called (EasyPanel, for instance, often provisions "user").
+do $$
+begin
+  execute format('grant anon, authenticated, service_role to %I', current_user);
+exception when insufficient_privilege then
+  raise notice 'Lewati grant role ke %: user ini tidak punya hak admin atas role tersebut.', current_user;
+end $$;
 grant usage on schema public to anon, authenticated, service_role;
 
 do $$ begin
