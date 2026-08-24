@@ -82,6 +82,16 @@ export async function POST() {
   const auth = await requireOwner();
   if ("error" in auth) return auth.error;
 
+  // Without gateway keys there is nothing to redirect to; say so plainly instead of
+  // letting the Midtrans client throw a 500 at the user.
+  if (!process.env.MIDTRANS_SERVER_KEY) {
+    return apiError(
+      "Pembayaran online belum aktif. Gunakan kode kupon, atau hubungi admin untuk upgrade manual.",
+      503,
+      "PAYMENT_NOT_CONFIGURED"
+    );
+  }
+
   try {
     // Check if already PRO
     const business = await postgrestJson<Array<{ plan: string }>>(

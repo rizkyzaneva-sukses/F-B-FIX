@@ -28,6 +28,31 @@ const proFeatures = [
 export default function PricingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [coupon, setCoupon] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [success, setSuccess] = useState("");
+
+  const handleCoupon = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+    if (!coupon.trim()) return setError("Masukkan kode kupon terlebih dahulu.");
+    setCouponLoading(true);
+    try {
+      const result = await backendRequest<{ message: string }>("/api/subscription/coupon", {
+        method: "POST",
+        body: JSON.stringify({ code: coupon.trim() }),
+      });
+      setSuccess(result.message || "Paket PRO berhasil diaktifkan.");
+      setCoupon("");
+      // Give the confirmation a beat to be read before the app reloads with PRO on.
+      window.setTimeout(() => { window.location.href = "/"; }, 1600);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kode kupon tidak bisa dipakai.");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
 
   const handleUpgrade = async () => {
     setLoading(true);
@@ -69,6 +94,12 @@ export default function PricingPage() {
         {error && (
           <div className="callout error" style={{ marginBottom: 24, maxWidth: 480, margin: "0 auto 24px" }}>
             {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="callout success" style={{ marginBottom: 24, maxWidth: 480, margin: "0 auto 24px" }}>
+            {success}
           </div>
         )}
 
@@ -153,6 +184,26 @@ export default function PricingPage() {
               {loading ? "Memproses..." : "Upgrade ke PRO"} <ChevronRight size={16} />
             </button>
           </div>
+        </div>
+
+        <div className="card card-pad" style={{ maxWidth: 480, margin: "28px auto 0" }}>
+          <div style={{ marginBottom: 12 }}>
+            <strong style={{ display: "block" }}>Punya kode kupon?</strong>
+            <span style={{ color: "#64748b", fontSize: 14 }}>Aktifkan PRO tanpa pembayaran. Harus login sebagai pemilik usaha.</span>
+          </div>
+          <form onSubmit={handleCoupon} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              className="input"
+              style={{ flex: "1 1 200px", textTransform: "uppercase" }}
+              value={coupon}
+              onChange={(event) => setCoupon(event.target.value.toUpperCase())}
+              placeholder="Masukkan kode"
+              aria-label="Kode kupon"
+            />
+            <button className="button button-secondary" disabled={couponLoading}>
+              {couponLoading ? "Memeriksa..." : "Pakai kupon"}
+            </button>
+          </form>
         </div>
 
         <div style={{ textAlign: "center", marginTop: 32 }}>
