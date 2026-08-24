@@ -30,8 +30,10 @@ Service `postgrest` wajib jalan dengan `PGRST_JWT_ROLE_CLAIM_KEY=.db_role` (suda
 
 1. Arahkan domain ke service `web` pada port container `3000`.
 2. Aktifkan HTTPS dari EasyPanel.
-3. Health check aplikasi: `GET /`.
+3. Health check aplikasi: `GET /api/health`.
 4. PostgREST cukup internal dan tidak perlu diekspos ke internet.
+
+Jika EasyPanel menampilkan **Service is not reachable** tetapi container `web` hijau, cek log `web`. Log Next.js harus menampilkan `Local: http://...:3000` atau `Network: http://...:3000`. Kalau yang muncul port `80`, berarti runtime environment menimpa port Next.js. Compose ini sudah memaksa `PORT=3000` dan `HOSTNAME=0.0.0.0`; lakukan rebuild/redeploy agar image dan container baru memakai konfigurasi tersebut.
 
 ## 4. Migrasi database
 

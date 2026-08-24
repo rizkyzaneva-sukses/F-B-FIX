@@ -13,6 +13,7 @@ const PUBLIC_ROUTES = [
   "/api/auth/register",
   "/api/auth/cashier-login",
   "/api/auth/logout",
+  "/api/health",
   "/api/auth/verify-email",
   "/api/auth/reset-password",
 ];
