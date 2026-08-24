@@ -1,9 +1,43 @@
 import { SignJWT } from "jose";
 
+/**
+ * Read a URL from env and tolerate the most common EasyPanel/dotenv mistake:
+ * pasting the whole `NAMA=nilai` line into the value field, or wrapping it in quotes.
+ * Without this, fetch() fails with "Failed to parse URL from POSTGREST_URL=http://...".
+ */
+export function envUrl(name: string): string {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) throw new Error(`${name} belum dikonfigurasi`);
+
+  let value = raw;
+  // Strip repeated "NAMA=" prefixes (e.g. "POSTGREST_URL=POSTGREST_URL=http://...")
+  while (value.toUpperCase().startsWith(`${name.toUpperCase()}=`)) {
+    value = value.slice(name.length + 1).trim();
+  }
+  value = value.replace(/^['"]|['"]$/g, "").trim().replace(/\/+$/, "");
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    parsed = null as unknown as URL;
+  }
+  if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
+    throw new Error(
+      `${name} tidak valid: "${raw}". Isi hanya nilainya saja, contoh: http://postgrest:3001`
+    );
+  }
+  return value;
+}
+
 function baseUrl() {
-  const value = process.env.POSTGREST_URL;
-  if (!value) throw new Error("POSTGREST_URL belum dikonfigurasi");
-  return value.replace(/\/$/, "");
+  return envUrl("POSTGREST_URL");
+}
+
+function jwtSecret(): Uint8Array {
+  const secret = process.env.POSTGREST_JWT_SECRET;
+  if (!secret) throw new Error("POSTGREST_JWT_SECRET belum dikonfigurasi");
+  return new TextEncoder().encode(secret);
 }
 
 // Cache admin token until 30s before expiry
@@ -13,8 +47,11 @@ let cachedAdminTokenExpiry = 0;
 /**
  * Generate or return cached admin JWT for PostgREST.
  * Uses POSTGREST_JWT_SECRET (NOT session secret).
+ *
+ * `db_role` is the Postgres role PostgREST switches to (see PGRST_JWT_ROLE_CLAIM_KEY),
+ * `role` stays the application role that the RLS policies read.
  */
-async function adminToken(): Promise<string> {
+export async function adminToken(): Promise<string> {
   const now = Date.now();
   if (cachedAdminToken && now < cachedAdminTokenExpiry - 30_000) {
     return cachedAdminToken;
@@ -27,21 +64,44 @@ async function adminToken(): Promise<string> {
     return cachedAdminToken;
   }
 
-  const secret = process.env.POSTGREST_JWT_SECRET;
-  if (!secret) throw new Error("POSTGREST_JWT_SECRET belum dikonfigurasi");
-
   cachedAdminToken = await new SignJWT({
     role: "service_role",
+    db_role: "service_role",
     user_id: "00000000-0000-0000-0000-000000000000",
     business_id: "00000000-0000-0000-0000-000000000000",
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()
     .setExpirationTime("5m")
-    .sign(new TextEncoder().encode(secret));
+    .sign(jwtSecret());
 
   cachedAdminTokenExpiry = now + 5 * 60 * 1000;
   return cachedAdminToken;
+}
+
+/**
+ * Mint a short-lived PostgREST token for a logged-in user.
+ *
+ * The session cookie is signed with SESSION_SECRET and carries role "OWNER"/"KASIR",
+ * which PostgREST can neither verify (different secret) nor switch to (not a DB role).
+ * So we re-sign the claims with POSTGREST_JWT_SECRET and run every user query as the
+ * `authenticated` Postgres role, leaving RLS to filter on business_id + role.
+ */
+export async function userToken(session: {
+  user_id: string;
+  business_id: string;
+  role: "OWNER" | "KASIR";
+}): Promise<string> {
+  return new SignJWT({
+    role: session.role,
+    db_role: "authenticated",
+    user_id: session.user_id,
+    business_id: session.business_id,
+  })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setExpirationTime("10m")
+    .sign(jwtSecret());
 }
 
 export async function postgrest(path: string, init: RequestInit = {}, token?: string) {

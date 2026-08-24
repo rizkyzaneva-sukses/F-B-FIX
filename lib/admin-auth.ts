@@ -1,5 +1,6 @@
 import { apiError } from "@/lib/api-response";
-import { readSession, sessionToken } from "@/lib/auth";
+import { readSession } from "@/lib/auth";
+import { adminToken } from "@/lib/postgrest";
 
 /**
  * Require admin-level access.
@@ -7,8 +8,8 @@ import { readSession, sessionToken } from "@/lib/auth";
  * For now, we check for a specific admin email pattern or env var.
  */
 export async function requireAdmin() {
-  const [session, token] = await Promise.all([readSession(), sessionToken()]);
-  if (!session || !token) {
+  const session = await readSession();
+  if (!session) {
     return { error: apiError("Sesi login diperlukan.", 401, "UNAUTHENTICATED") } as const;
   }
 
@@ -20,5 +21,7 @@ export async function requireAdmin() {
     return { error: apiError("Akses admin diperlukan.", 403, "FORBIDDEN") } as const;
   }
 
+  // Admin panel reads across every business, so it runs with the service token.
+  const token = await adminToken();
   return { session, token } as { session: typeof session; token: string };
 }

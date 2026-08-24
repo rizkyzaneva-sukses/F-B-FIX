@@ -1,9 +1,12 @@
 import { apiError } from "@/lib/api-response";
-import { readSession, sessionToken, type Session } from "@/lib/auth";
+import { readSession, type Session } from "@/lib/auth";
+import { userToken } from "@/lib/postgrest";
 
 export async function requireSession() {
-  const [session, token] = await Promise.all([readSession(), sessionToken()]);
-  if (!session || !token) return { error: apiError("Sesi login diperlukan.", 401, "UNAUTHENTICATED") } as const;
+  const session = await readSession();
+  if (!session) return { error: apiError("Sesi login diperlukan.", 401, "UNAUTHENTICATED") } as const;
+  // The session cookie is signed with SESSION_SECRET; PostgREST needs its own token.
+  const token = await userToken(session);
   return { session, token } as { session: Session; token: string };
 }
 
