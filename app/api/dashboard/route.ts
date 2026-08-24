@@ -10,6 +10,9 @@ export async function GET() {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const monthStart = today.slice(0, 7) + "-01";
+    const weekStartDate = new Date(`${today}T00:00:00Z`);
+    weekStartDate.setUTCDate(weekStartDate.getUTCDate() - 6);
+    const weekStart = weekStartDate.toISOString().slice(0, 10);
 
     const [
       todaySales,
@@ -22,6 +25,7 @@ export async function GET() {
       recentPurchases,
       allProducts,
       allMaterials,
+      weekSales,
     ] = await Promise.all([
       // Today's sales total
       postgrestJson<Array<{ total: string }>>(
@@ -71,7 +75,28 @@ export async function GET() {
       postgrestCount(`/items?item_type=eq.PRODUCT&is_active=eq.true`, auth.token),
       // All active materials count
       postgrestCount(`/items?item_type=eq.RAW_MATERIAL&is_active=eq.true`, auth.token),
+      // Last 7 days of sales, for the dashboard trend chart
+      postgrestJson<Array<{ total: string; occurred_at: string }>>(
+        `/transactions?select=total,occurred_at&transaction_type=eq.SALE&occurred_at=gte.${dayStart(weekStart)}&occurred_at=lt.${dayEndExclusive(today)}&order=occurred_at&limit=2000`,
+        {},
+        auth.token
+      ),
     ]);
+
+    // One bucket per day so days with no sales still render as an empty column.
+    const trendBuckets = new Map<string, number>();
+    for (let offset = 6; offset >= 0; offset--) {
+      const date = new Date(`${today}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() - offset);
+      trendBuckets.set(date.toISOString().slice(0, 10), 0);
+    }
+    for (const sale of weekSales) {
+      const day = String(sale.occurred_at || "").slice(0, 10);
+      if (trendBuckets.has(day)) {
+        trendBuckets.set(day, (trendBuckets.get(day) || 0) + Number(sale.total || 0));
+      }
+    }
+    const salesTrend = [...trendBuckets].map(([date, total]) => ({ date, total }));
 
     // Calculate today's COGS from transaction items
     const todaySaleIds = recentSales
@@ -99,6 +124,7 @@ export async function GET() {
         expenses: todayExpenseTotal,
         netProfit: todayRevenue - todayCogs - todayExpenseTotal,
       },
+      salesTrend,
       plan: {
         salesCount: monthlySalesCount,
         productCount: allProducts,
