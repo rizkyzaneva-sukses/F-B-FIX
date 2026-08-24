@@ -4,3 +4,7 @@ node_modules
 .env*
 !.env.example
 *.log
+# Kehadiran lockfile pnpm membuat Next.js memanggil pnpm saat build, padahal image
+# ini memakai npm.
+pnpm-lock.yaml
+pnpm-workspace.yaml
