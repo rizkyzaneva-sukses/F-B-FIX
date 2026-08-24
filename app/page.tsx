@@ -405,7 +405,7 @@ export default function Home() {
 
   return (
     <div className={`app-shell ${dark ? "dark-mode" : ""}`}>
-      <Sidebar view={view} navigate={navigate} onPlan={() => notify("Permintaan upgrade PRO dicatat.")} />
+      <Sidebar view={view} navigate={navigate} onPlan={() => notify("Permintaan upgrade PRO dicatat.")} salesCount={salesCount} />
       <div className="main-area">
         <header className="topbar">
           <div className="topbar-context"><strong>{businessName}</strong><span> / </span>{view === "pos" ? "Kasir POS" : navSections.flatMap((section) => section.items).find((item) => item.id === view)?.label || "Pengaturan"}</div>
@@ -440,7 +440,7 @@ export default function Home() {
   );
 }
 
-function Sidebar({ view, navigate, onPlan }: { view: View; navigate: (view: View) => void; onPlan: () => void }) {
+function Sidebar({ view, navigate, onPlan, salesCount }: { view: View; navigate: (view: View) => void; onPlan: () => void; salesCount: number }) {
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
