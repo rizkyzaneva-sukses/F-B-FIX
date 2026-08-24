@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dapurkasir}
+      POSTGRES_USER: ${POSTGRES_USER:-dapurkasir}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in EasyPanel}
+    volumes:
+      - dapurkasir_pgdata:/var/lib/postgresql/data
+      - ./db/migrations/001_dapurkasir.sql:/docker-entrypoint-initdb.d/001_dapurkasir.sql:ro
+      - ./db/migrations/002_accounting_features.sql:/docker-entrypoint-initdb.d/002_accounting_features.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dapurkasir} -d ${POSTGRES_DB:-dapurkasir}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.12
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://${POSTGRES_USER:-dapurkasir}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dapurkasir}
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${POSTGREST_JWT_SECRET:?set POSTGREST_JWT_SECRET in EasyPanel}
+      PGRST_DB_PRE_REQUEST: public.check_request
+      PGRST_SERVER_PORT: 3001
+    expose:
+      - "3001"
+
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_BACKEND_ENABLED: "true"
+    restart: unless-stopped
+    depends_on:
+      - postgrest
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_BACKEND_ENABLED: "true"
+      POSTGREST_URL: http://postgrest:3001
+      POSTGREST_JWT_SECRET: ${POSTGREST_JWT_SECRET:?set POSTGREST_JWT_SECRET in EasyPanel}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  dapurkasir_pgdata:
