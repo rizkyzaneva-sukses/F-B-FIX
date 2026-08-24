@@ -150,9 +150,9 @@ export async function POST() {
         },
       ],
       callbacks: {
-        finish: `${appUrl}/settings?payment=success`,
-        unfinish: `${appUrl}/settings?payment=pending`,
-        error: `${appUrl}/settings?payment=failed`,
+        finish: `${appUrl}/?payment=success`,
+        unfinish: `${appUrl}/?payment=pending`,
+        error: `${appUrl}/?payment=failed`,
       },
     });
 

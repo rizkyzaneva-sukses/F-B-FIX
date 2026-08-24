@@ -1,4 +1,4 @@
-import { postgrestJson } from "@/lib/postgrest";
+import { postgrestJson, postgrestCount } from "@/lib/postgrest";
 
 export interface PlanLimits {
   plan: "FREE" | "PRO";
@@ -20,25 +20,16 @@ export async function getPlanInfo(
   businessId: string,
   token?: string
 ): Promise<{ limits: PlanLimits; usage: UsageCounts }> {
-  const [businesses, products, materials, salesCount] = await Promise.all([
+  const [businesses, activeProducts, activeMaterials, salesThisMonth] = await Promise.all([
     postgrestJson<Array<PlanLimits>>(
       `/businesses?select=plan,sales_transaction_limit,product_limit,raw_material_limit&id=eq.${businessId}`,
       {},
       token
     ),
-    postgrestJson<Array<{ count: number }>>(
-      `/items?select=count&business_id=eq.${businessId}&item_type=eq.PRODUCT&is_active=eq.true`,
-      { headers: { Prefer: "count=exact" } },
-      token
-    ),
-    postgrestJson<Array<{ count: number }>>(
-      `/items?select=count&business_id=eq.${businessId}&item_type=eq.RAW_MATERIAL&is_active=eq.true`,
-      { headers: { Prefer: "count=exact" } },
-      token
-    ),
-    postgrestJson<Array<{ count: number }>>(
-      `/transactions?select=count&business_id=eq.${businessId}&transaction_type=eq.SALE&occurred_at=gte.${new Date().toISOString().slice(0, 7)}-01`,
-      { headers: { Prefer: "count=exact" } },
+    postgrestCount(`/items?business_id=eq.${businessId}&item_type=eq.PRODUCT&is_active=eq.true`, token),
+    postgrestCount(`/items?business_id=eq.${businessId}&item_type=eq.RAW_MATERIAL&is_active=eq.true`, token),
+    postgrestCount(
+      `/transactions?business_id=eq.${businessId}&transaction_type=eq.SALE&occurred_at=gte.${new Date().toISOString().slice(0, 7)}-01`,
       token
     ),
   ]);
@@ -48,11 +39,7 @@ export async function getPlanInfo(
 
   return {
     limits: business,
-    usage: {
-      salesThisMonth: Number(salesCount[0]?.count ?? 0),
-      activeProducts: Number(products[0]?.count ?? 0),
-      activeMaterials: Number(materials[0]?.count ?? 0),
-    },
+    usage: { salesThisMonth, activeProducts, activeMaterials },
   };
 }
 

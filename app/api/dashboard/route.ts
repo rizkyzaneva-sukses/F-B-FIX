@@ -1,5 +1,5 @@
 import { apiData, apiError } from "@/lib/api-response";
-import { postgrestJson } from "@/lib/postgrest";
+import { postgrestJson, postgrestCount } from "@/lib/postgrest";
 import { requireSession } from "@/lib/route-auth";
 
 export async function GET() {
@@ -47,11 +47,7 @@ export async function GET() {
         auth.token
       ),
       // Monthly sales count (for plan limits)
-      postgrestJson<Array<{ count: number }>>(
-        `/transactions?select=count&transaction_type=eq.SALE&occurred_at=gte.${monthStart}`,
-        { headers: { Prefer: "count=exact" } },
-        auth.token
-      ),
+      postgrestCount(`/transactions?transaction_type=eq.SALE&occurred_at=gte.${monthStart}`, auth.token),
       // Recent sales (last 5)
       postgrestJson<Array<{ id: string; total: string; occurred_at: string; payment_method: string }>>(
         `/transactions?select=id,total,occurred_at,payment_method&transaction_type=eq.SALE&order=occurred_at.desc&limit=5`,
@@ -71,17 +67,9 @@ export async function GET() {
         auth.token
       ),
       // All active products count
-      postgrestJson<Array<{ count: number }>>(
-        `/items?select=count&item_type=eq.PRODUCT&is_active=eq.true`,
-        { headers: { Prefer: "count=exact" } },
-        auth.token
-      ),
+      postgrestCount(`/items?item_type=eq.PRODUCT&is_active=eq.true`, auth.token),
       // All active materials count
-      postgrestJson<Array<{ count: number }>>(
-        `/items?select=count&item_type=eq.RAW_MATERIAL&is_active=eq.true`,
-        { headers: { Prefer: "count=exact" } },
-        auth.token
-      ),
+      postgrestCount(`/items?item_type=eq.RAW_MATERIAL&is_active=eq.true`, auth.token),
     ]);
 
     // Calculate today's COGS from transaction items
@@ -111,9 +99,9 @@ export async function GET() {
         netProfit: todayRevenue - todayCogs - todayExpenseTotal,
       },
       plan: {
-        salesCount: Number(monthlySalesCount[0]?.count ?? 0),
-        productCount: Number(allProducts[0]?.count ?? 0),
-        materialCount: Number(allMaterials[0]?.count ?? 0),
+        salesCount: monthlySalesCount,
+        productCount: allProducts,
+        materialCount: allMaterials,
       },
       criticalMaterials: criticalMaterials.map((m) => ({
         id: m.id,

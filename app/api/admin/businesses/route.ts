@@ -1,5 +1,5 @@
 import { apiData, apiError } from "@/lib/api-response";
-import { postgrestJson } from "@/lib/postgrest";
+import { postgrestJson, postgrestCount } from "@/lib/postgrest";
 import { requireAdmin } from "@/lib/admin-auth";
 
 /**
@@ -17,43 +17,31 @@ export async function GET(request: Request) {
     const planFilter = url.searchParams.get("plan") || "";
     const offset = (page - 1) * limit;
 
-    let query = `/businesses?select=*&order=created_at.desc&limit=${limit}&offset=${offset}`;
-    if (search) query += `&name=ilike.*${encodeURIComponent(search)}*`;
-    if (planFilter) query += `&plan=eq.${planFilter}`;
+    const filterParts = [
+      search ? `name=ilike.*${encodeURIComponent(search)}*` : null,
+      planFilter ? `plan=eq.${encodeURIComponent(planFilter)}` : null,
+    ].filter(Boolean);
+    const filters = filterParts.length ? `&${filterParts.join("&")}` : "";
+    const query = `/businesses?select=*&order=created_at.desc&limit=${limit}&offset=${offset}${filters}`;
 
-    const [businesses, totalCount] = await Promise.all([
-      postgrestJson<Array<Record<string, unknown>>>(query, {
-        headers: { Prefer: "count=exact" },
-      }),
-      postgrestJson<Array<{ count: number }>>(
-        `/businesses?select=count${search ? `&name=ilike.*${encodeURIComponent(search)}*` : ""}${planFilter ? `&plan=eq.${planFilter}` : ""}`,
-        { headers: { Prefer: "count=exact" } }
-      ),
+    const [businesses, total] = await Promise.all([
+      postgrestJson<Array<Record<string, unknown>>>(query),
+      postgrestCount(filterParts.length ? `/businesses?${filterParts.join("&")}` : "/businesses"),
     ]);
 
     // Get usage stats for each business
     const businessesWithStats = await Promise.all(
       businesses.map(async (biz) => {
-        const [users, salesCount, productCount, materialCount, recentPayment] = await Promise.all([
+        const monthStart = `${new Date().toISOString().slice(0, 7)}-01`;
+        const [users, salesThisMonth, productCount, materialCount, recentPayment] = await Promise.all([
           postgrestJson<Array<{ id: string; name: string; role: string; is_active: boolean; email: string }>>(
-            `/app_users?select=id,name,role,is_active,email&business_id=eq.${biz.id}`,
-            {}
+            `/app_users?select=id,name,role,is_active,email&business_id=eq.${biz.id}`
           ),
-          postgrestJson<Array<{ count: number }>>(
-            `/transactions?select=count&business_id=eq.${biz.id}&transaction_type=eq.SALE&occurred_at=gte.${new Date().toISOString().slice(0, 7)}-01`,
-            { headers: { Prefer: "count=exact" } }
-          ),
-          postgrestJson<Array<{ count: number }>>(
-            `/items?select=count&business_id=eq.${biz.id}&item_type=eq.PRODUCT&is_active=eq.true`,
-            { headers: { Prefer: "count=exact" } }
-          ),
-          postgrestJson<Array<{ count: number }>>(
-            `/items?select=count&business_id=eq.${biz.id}&item_type=eq.RAW_MATERIAL&is_active=eq.true`,
-            { headers: { Prefer: "count=exact" } }
-          ),
+          postgrestCount(`/transactions?business_id=eq.${biz.id}&transaction_type=eq.SALE&occurred_at=gte.${monthStart}`),
+          postgrestCount(`/items?business_id=eq.${biz.id}&item_type=eq.PRODUCT&is_active=eq.true`),
+          postgrestCount(`/items?business_id=eq.${biz.id}&item_type=eq.RAW_MATERIAL&is_active=eq.true`),
           postgrestJson<Array<{ amount: string; status: string; paid_at: string }>>(
-            `/payments?select=amount,status,paid_at&business_id=eq.${biz.id}&order=created_at.desc&limit=1`,
-            {}
+            `/payments?select=amount,status,paid_at&business_id=eq.${biz.id}&order=created_at.desc&limit=1`
           ),
         ]);
 
@@ -62,9 +50,9 @@ export async function GET(request: Request) {
           stats: {
             userCount: users.length,
             users: users.map((u) => ({ id: u.id, name: u.name, role: u.role, active: u.is_active, email: u.email })),
-            salesThisMonth: Number(salesCount[0]?.count ?? 0),
-            productCount: Number(productCount[0]?.count ?? 0),
-            materialCount: Number(materialCount[0]?.count ?? 0),
+            salesThisMonth,
+            productCount,
+            materialCount,
           },
           lastPayment: recentPayment[0]
             ? {
@@ -82,8 +70,8 @@ export async function GET(request: Request) {
       pagination: {
         page,
         limit,
-        total: Number(totalCount[0]?.count ?? 0),
-        totalPages: Math.ceil(Number(totalCount[0]?.count ?? 0) / limit),
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {

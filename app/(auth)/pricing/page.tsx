@@ -43,8 +43,8 @@ export default function PricingPage() {
       } else if (result.snapToken) {
         // @ts-expect-error Midtrans Snap global
         window.snap?.pay(result.snapToken, {
-          onSuccess: () => (window.location.href = "/settings?payment=success"),
-          onPending: () => (window.location.href = "/settings?payment=pending"),
+          onSuccess: () => (window.location.href = "/?payment=success"),
+          onPending: () => (window.location.href = "/?payment=pending"),
           onError: () => setError("Pembayaran gagal. Silakan coba lagi."),
           onClose: () => setLoading(false),
         });

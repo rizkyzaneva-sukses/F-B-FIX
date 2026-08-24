@@ -1,5 +1,7 @@
 import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
+import { readSession } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 import crypto from "crypto";
 
 function hashToken(token: string): string {
@@ -7,20 +9,22 @@ function hashToken(token: string): string {
 }
 
 /**
- * POST: Send verification email
- * GET: Verify email with token
+ * POST: Resend verification email for the CURRENTLY LOGGED-IN user.
+ * GET: Verify email with token (public — this is the link clicked from email).
+ *
+ * POST used to trust user_id/email straight from the request body with no
+ * session check, so anyone could make the server spam an arbitrary inbox on
+ * repeat. Identity now always comes from the session cookie.
  */
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const { user_id, email, name } = (await request.json()) as {
-      user_id?: string;
-      email?: string;
-      name?: string;
-    };
+    const session = await readSession();
+    if (!session?.email) return apiError("Sesi login diperlukan.", 401, "UNAUTHENTICATED");
 
-    if (!user_id || !email) {
-      return apiError("User ID dan email wajib diisi.", 422, "VALIDATION_ERROR");
+    const limit = checkRateLimit(`verify-email-resend:${session.user_id}`, 3, 60 * 60 * 1000);
+    if (!limit.allowed) {
+      return apiError("Terlalu banyak permintaan. Coba lagi dalam 1 jam.", 429, "RATE_LIMITED");
     }
 
     // Generate token
@@ -28,19 +32,12 @@ export async function POST(request: Request) {
     const tokenHash = hashToken(token);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    // Get business_id
-    const users = await postgrestJson<Array<{ business_id: string }>>(
-      `/app_users?select=business_id&id=eq.${user_id}`,
-      {}
-    );
-    if (!users[0]) return apiError("User tidak ditemukan.", 404, "USER_NOT_FOUND");
-
     // Store token
     await postgrestJson("/verification_tokens", {
       method: "POST",
       body: JSON.stringify({
-        user_id,
-        business_id: users[0].business_id,
+        user_id: session.user_id,
+        business_id: session.business_id,
         token_hash: tokenHash,
         purpose: "email_verify",
         expires_at: expiresAt,
@@ -53,9 +50,9 @@ export async function POST(request: Request) {
 
     const { sendEmail, verificationEmailHtml } = await import("@/lib/email");
     await sendEmail({
-      to: email,
+      to: session.email,
       subject: "Verifikasi Email DapurKasir",
-      html: verificationEmailHtml(name || "User", verifyLink),
+      html: verificationEmailHtml(session.name || "User", verifyLink),
     });
 
     return apiData({ message: "Email verifikasi telah dikirim." });

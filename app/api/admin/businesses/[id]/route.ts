@@ -1,5 +1,5 @@
 import { apiData, apiError } from "@/lib/api-response";
-import { postgrestJson } from "@/lib/postgrest";
+import { postgrestJson, postgrestCount } from "@/lib/postgrest";
 import { requireAdmin } from "@/lib/admin-auth";
 
 /**
@@ -110,38 +110,26 @@ async function getUsageStats(businessId: string) {
   const today = new Date().toISOString().slice(0, 10);
   const monthStart = today.slice(0, 7) + "-01";
 
-  const [salesToday, salesMonth, products, materials, receivables, expenses] = await Promise.all([
+  const [salesToday, salesThisMonth, productCount, materialCount, receivables, expenses] = await Promise.all([
     postgrestJson<Array<{ total: string }>>(
-      `/transactions?select=total&business_id=eq.${businessId}&transaction_type=eq.SALE&occurred_at=gte.${today}T00:00:00`,
-      {}
+      `/transactions?select=total&business_id=eq.${businessId}&transaction_type=eq.SALE&occurred_at=gte.${today}T00:00:00`
     ),
-    postgrestJson<Array<{ count: number }>>(
-      `/transactions?select=count&business_id=eq.${businessId}&transaction_type=eq.SALE&occurred_at=gte.${monthStart}`,
-      { headers: { Prefer: "count=exact" } }
-    ),
-    postgrestJson<Array<{ count: number }>>(
-      `/items?select=count&business_id=eq.${businessId}&item_type=eq.PRODUCT&is_active=eq.true`,
-      { headers: { Prefer: "count=exact" } }
-    ),
-    postgrestJson<Array<{ count: number }>>(
-      `/items?select=count&business_id=eq.${businessId}&item_type=eq.RAW_MATERIAL&is_active=eq.true`,
-      { headers: { Prefer: "count=exact" } }
-    ),
+    postgrestCount(`/transactions?business_id=eq.${businessId}&transaction_type=eq.SALE&occurred_at=gte.${monthStart}`),
+    postgrestCount(`/items?business_id=eq.${businessId}&item_type=eq.PRODUCT&is_active=eq.true`),
+    postgrestCount(`/items?business_id=eq.${businessId}&item_type=eq.RAW_MATERIAL&is_active=eq.true`),
     postgrestJson<Array<{ amount: string; paid_amount: string }>>(
-      `/receivables?select=amount,paid_amount&business_id=eq.${businessId}&status=neq.LUNAS`,
-      {}
+      `/receivables?select=amount,paid_amount&business_id=eq.${businessId}&status=neq.LUNAS`
     ),
     postgrestJson<Array<{ amount: string }>>(
-      `/expenses?select=amount&business_id=eq.${businessId}&expense_date=gte.${monthStart}`,
-      {}
+      `/expenses?select=amount&business_id=eq.${businessId}&expense_date=gte.${monthStart}`
     ),
   ]);
 
   return {
     salesToday: salesToday.reduce((sum, s) => sum + Number(s.total), 0),
-    salesThisMonth: Number(salesMonth[0]?.count ?? 0),
-    productCount: Number(products[0]?.count ?? 0),
-    materialCount: Number(materials[0]?.count ?? 0),
+    salesThisMonth,
+    productCount,
+    materialCount,
     outstandingReceivables: receivables.reduce(
       (sum, r) => sum + Number(r.amount) - Number(r.paid_amount || 0),
       0

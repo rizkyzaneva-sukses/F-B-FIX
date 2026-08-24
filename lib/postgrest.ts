@@ -131,3 +131,32 @@ export async function postgrestJson<T>(path: string, init: RequestInit = {}, tok
   }
   return body as T;
 }
+
+/**
+ * Count rows matching a filter without fetching them.
+ *
+ * `select=count` (used throughout this codebase historically) is NOT valid
+ * PostgREST syntax — it is read as a column named "count", which fails with
+ * `column "count" does not exist` unless db-aggregates-enabled is on (it
+ * isn't, by default). The correct way to count is `Prefer: count=exact` plus
+ * the `Content-Range` response header, which this wraps.
+ *
+ * `path` is the filter query WITHOUT a leading `select=` param, e.g.
+ * `/items?business_id=eq.${id}&item_type=eq.PRODUCT`.
+ */
+export async function postgrestCount(path: string, token?: string): Promise<number> {
+  const separator = path.includes("?") ? "&" : "?";
+  const response = await postgrest(
+    `${path}${separator}select=id&limit=1`,
+    { headers: { Prefer: "count=exact" } },
+    token
+  );
+  await response.text(); // drain body, we only need the header
+  if (!response.ok) {
+    throw Object.assign(new Error(`PostgREST count error ${response.status}`), { status: response.status });
+  }
+  const range = response.headers.get("content-range"); // "0-0/57" or "*/0"
+  if (!range) return 0;
+  const total = range.split("/")[1];
+  return total === "*" || !total ? 0 : Number(total);
+}
