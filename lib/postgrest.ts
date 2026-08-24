@@ -110,7 +110,15 @@ export async function postgrest(path: string, init: RequestInit = {}, token?: st
   headers.set("Accept-Profile", process.env.POSTGREST_SCHEMA || "public");
   headers.set("Content-Profile", process.env.POSTGREST_SCHEMA || "public");
   headers.set("Authorization", `Bearer ${token || (await adminToken())}`);
-  return fetch(`${baseUrl()}${path}`, { ...init, headers, cache: "no-store" });
+  const url = `${baseUrl()}${path}`;
+  try {
+    return await fetch(url, { ...init, headers, cache: "no-store" });
+  } catch (error) {
+    console.error(`[postgrest] Network error fetching ${url}:`, error);
+    throw new Error(
+      `Tidak bisa terhubung ke database service (${process.env.POSTGREST_URL || "POSTGREST_URL NOT SET"}). Pastikan PostgREST berjalan.`
+    );
+  }
 }
 
 export async function postgrestJson<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {

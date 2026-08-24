@@ -70,10 +70,14 @@ export async function GET() {
       proPrice: PRO_PRICE,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal memuat langganan.";
+    const isNetworkError = message.includes("Tidak bisa terhubung") || message.includes("fetch failed");
     return apiError(
-      error instanceof Error ? error.message : "Gagal memuat langganan.",
-      502,
-      "SUBSCRIPTION_FAILED"
+      isNetworkError
+        ? "Server sedang tidak tersedia. Silakan coba lagi dalam beberapa saat."
+        : message,
+      isNetworkError ? 503 : 502,
+      isNetworkError ? "SERVICE_UNAVAILABLE" : "SUBSCRIPTION_FAILED"
     );
   }
 }
@@ -186,10 +190,14 @@ export async function POST() {
       amount: PRO_PRICE,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal membuat pembayaran.";
+    const isNetworkError = message.includes("Tidak bisa terhubung") || message.includes("fetch failed");
     return apiError(
-      error instanceof Error ? error.message : "Gagal membuat pembayaran.",
-      500,
-      "PAYMENT_FAILED"
+      isNetworkError
+        ? "Server sedang tidak tersedia. Silakan coba lagi dalam beberapa saat."
+        : message,
+      isNetworkError ? 503 : 500,
+      isNetworkError ? "SERVICE_UNAVAILABLE" : "PAYMENT_FAILED"
     );
   }
 }

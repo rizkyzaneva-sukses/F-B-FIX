@@ -105,10 +105,14 @@ export async function POST(request: Request) {
 
     return apiData({ user_id: created.user_id, business_id: created.business_id }, 201);
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Registrasi gagal.";
+    const isNetworkError = message.includes("Tidak bisa terhubung") || message.includes("fetch failed");
     return apiError(
-      error instanceof Error ? error.message : "Registrasi gagal.",
-      500,
-      "REGISTER_FAILED"
+      isNetworkError
+        ? "Server sedang tidak tersedia. Silakan coba lagi dalam beberapa saat."
+        : message,
+      isNetworkError ? 503 : 500,
+      isNetworkError ? "SERVICE_UNAVAILABLE" : "REGISTER_FAILED"
     );
   }
 }

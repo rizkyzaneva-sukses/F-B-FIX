@@ -44,6 +44,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const detail = statusFromError(error);
+    const isNetworkError = detail.message.includes("Tidak bisa terhubung") || detail.message.includes("fetch failed");
+    if (isNetworkError) {
+      return apiError("Server sedang tidak tersedia. Silakan coba lagi dalam beberapa saat.", 503, "SERVICE_UNAVAILABLE");
+    }
     // The RPC raises business-rule errors; surface its message rather than a generic 500.
     return apiError(detail.message, detail.status === 500 ? 422 : detail.status, "COUPON_FAILED");
   }
