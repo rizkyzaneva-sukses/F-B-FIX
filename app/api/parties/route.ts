@@ -1,6 +1,6 @@
 import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
-import { requireOwner, requireSession } from "@/lib/route-auth";
+import { requireSession } from "@/lib/route-auth";
 import { pickEnum } from "@/lib/query";
 
 const PARTY_TYPES = ["SUPPLIER", "CUSTOMER"] as const;
@@ -21,7 +21,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireOwner();
+  // Cashiers can create a customer/supplier inline from POS or purchases.
+  // RLS still scopes the record to the authenticated business.
+  const auth = await requireSession();
   if ("error" in auth) return auth.error;
 
   try {
