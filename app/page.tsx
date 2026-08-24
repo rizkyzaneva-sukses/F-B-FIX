@@ -109,6 +109,18 @@ const initialBatches: Batch[] = [
 
 const BACKEND_ENABLED = process.env.NEXT_PUBLIC_BACKEND_ENABLED === "true";
 
+type DashboardData = {
+  today: { revenue: number; cogs: number; grossProfit: number; expenses: number; netProfit: number };
+  plan: { salesCount: number; productCount: number; materialCount: number };
+  criticalMaterials: Array<{ id: string; name: string; stock: number; unit: string }>;
+  dueReceivables: Array<{ customer: string; remaining: number; dueDate: string }>;
+  recentActivity: {
+    sales: Array<{ id: string; total: number; date: string; method: string }>;
+    batches: Array<{ id: string; code: string; product: string; qty: number; cogs: number; date: string }>;
+    purchases: Array<{ id: string; total: number; supplier: string; date: string }>;
+  };
+};
+
 const rupiah = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value).replace("Rp", "Rp ");
 const shortRupiah = (value: number) => value >= 1000000 ? `Rp ${(value / 1000000).toFixed(1).replace(".", ",")} jt` : value >= 1000 ? `Rp ${(value / 1000).toFixed(0)} rb` : rupiah(value);
 const dateLabel = (value: string) => new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
@@ -132,6 +144,8 @@ export default function Home() {
   const [payables, setPayables] = useState<Purchase[]>(initialPurchases);
   const [sales, setSales] = useState(initialSales);
   const [salesCount, setSalesCount] = useState(38);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [businessName, setBusinessName] = useState("DapurKasir");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [modal, setModal] = useState<"product" | "material" | "payment" | "expense" | "production" | "purchase" | "capital" | "receipt" | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -159,7 +173,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!BACKEND_ENABLED) return;
-    backendRequest<{ products?: Array<Record<string, unknown>>; materials?: Array<Record<string, unknown>>; receivables?: Array<Record<string, unknown>>; expenses?: Array<Record<string, unknown>>; purchases?: Array<Record<string, unknown>>; batches?: Array<Record<string, unknown>>; payables?: Array<Record<string, unknown>>; capitalEntries?: Array<Record<string, unknown>>; sales?: Array<Record<string, unknown>>; saleItems?: Array<Record<string, unknown>> }>("/api/bootstrap").then((data) => {
+    // Fetch dashboard data
+    backendRequest<DashboardData>("/api/dashboard").then((data) => {
+      setDashboardData(data);
+      if (data.plan) setSalesCount(data.plan.salesCount);
+    }).catch(() => undefined);
+    // Fetch bootstrap data
+    backendRequest<{ business?: Record<string, unknown>; products?: Array<Record<string, unknown>>; materials?: Array<Record<string, unknown>>; receivables?: Array<Record<string, unknown>>; expenses?: Array<Record<string, unknown>>; purchases?: Array<Record<string, unknown>>; batches?: Array<Record<string, unknown>>; payables?: Array<Record<string, unknown>>; capitalEntries?: Array<Record<string, unknown>>; sales?: Array<Record<string, unknown>>; saleItems?: Array<Record<string, unknown>> }>("/api/bootstrap").then((data) => {
+      if (data.business?.name) setBusinessName(String(data.business.name));
       if (data.products) setProducts(data.products.map((item) => ({ id: String(item.id), name: String(item.name), category: String(item.category || "Lainnya"), stock: Number(item.stock_qty || 0), unit: String((item.units as { code?: string } | undefined)?.code || "pcs"), price: Number(item.sale_price || 0), cogs: Number(item.last_cogs || 0), emoji: initials(String(item.name)), active: Boolean(item.is_active) })));
       if (data.materials) setMaterials(data.materials.map((item) => ({ id: String(item.id), name: String(item.name), stock: Number(item.stock_qty || 0), unit: String((item.units as { code?: string } | undefined)?.code || "pcs"), lastBuy: Number(item.last_buy_price || 0), supplier: "Supplier tersimpan", active: Boolean(item.is_active) })));
       if (data.receivables) setReceivables(data.receivables.map((item) => ({ id: String(item.id), customer: String((item.parties as { name?: string } | undefined)?.name || "Pelanggan"), invoice: String(item.transaction_id || ""), amount: Number(item.amount || 0), paid: Number(item.paid_amount || 0), due: String(item.due_date) })));
@@ -345,19 +366,41 @@ export default function Home() {
     notify(`Pembayaran ${rupiah(amount)} diterima.`);
   };
 
-  const exportReport = () => {
-    const revenue = 4820000;
-    const cogs = 2265400;
-    const expenseTotal = expenses.reduce((sum, item) => sum + item.amount, 0);
-    const csv = ["Tanggal,Omzet,COGS,Laba Kotor,Pengeluaran,Net Profit", `2026-08-01 s/d 2026-08-24,${revenue},${cogs},${revenue - cogs},${expenseTotal},${revenue - cogs - expenseTotal}`].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "laporan-dapurkasir-2026-08-01-2026-08-24.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-    notify("Laporan CSV siap diunduh.");
+  const exportReport = async () => {
+    try {
+      if (BACKEND_ENABLED) {
+        // Use backend export (correct COGS calculation)
+        const from = new Date().toISOString().slice(0, 7) + "-01";
+        const to = new Date().toISOString().slice(0, 10);
+        const response = await fetch(`/api/reports/export?dateFrom=${from}&dateTo=${to}`);
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `laporan-dapurkasir-${from}-${to}.csv`;
+          link.click();
+          URL.revokeObjectURL(url);
+          notify("Laporan CSV siap diunduh.");
+          return;
+        }
+      }
+      // Fallback: client-side export
+      const revenue = sales.reduce((sum, item) => sum + item.total, 0);
+      const cogs = sales.reduce((sum, item) => sum + item.cogs, 0);
+      const expenseTotal = expenses.reduce((sum, item) => sum + item.amount, 0);
+      const csv = ["Tanggal,Omzet,COGS,Laba Kotor,Pengeluaran,Net Profit", `${new Date().toISOString().slice(0, 10)},${revenue},${cogs},${revenue - cogs},${expenseTotal},${revenue - cogs - expenseTotal}`].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `laporan-dapurkasir-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      notify("Laporan CSV siap diunduh.");
+    } catch {
+      notify("Export laporan gagal.", "error");
+    }
   };
 
   return (
@@ -365,14 +408,14 @@ export default function Home() {
       <Sidebar view={view} navigate={navigate} onPlan={() => notify("Permintaan upgrade PRO dicatat.")} />
       <div className="main-area">
         <header className="topbar">
-          <div className="topbar-context"><strong>Dapur Sari Nusantara</strong><span> / </span>{view === "pos" ? "Kasir POS" : navSections.flatMap((section) => section.items).find((item) => item.id === view)?.label || "Pengaturan"}</div>
+          <div className="topbar-context"><strong>{businessName}</strong><span> / </span>{view === "pos" ? "Kasir POS" : navSections.flatMap((section) => section.items).find((item) => item.id === view)?.label || "Pengaturan"}</div>
           <div className="topbar-actions">
             <button className="icon-button mobile-only" aria-label="Buka menu"><PanelLeft size={18} /></button>
             <button className="icon-button" aria-label="Notifikasi" onClick={() => notify("Tidak ada notifikasi baru.", "default")}><Bell size={17} /></button>
             <button className="icon-button" aria-label="Ganti tema" onClick={() => setDark((value) => !value)}>{dark ? <Sparkles size={17} /> : <Leaf size={17} />}</button>
           </div>
         </header>
-        {view === "dashboard" && <Dashboard products={products} materials={materials} expenses={expenses} receivables={receivables} salesCount={salesCount} dueReceivables={dueReceivables} navigate={navigate} />}
+        {view === "dashboard" && <Dashboard products={products} materials={materials} expenses={expenses} receivables={receivables} salesCount={salesCount} dueReceivables={dueReceivables} dashboardData={dashboardData} businessName={businessName} navigate={navigate} />}
         {view === "pos" && <POS products={products} cart={cart} total={cartTotal} onAdd={addToCart} onChangeQty={changeCartQty} onPay={() => setModal("payment")} onNewProduct={() => openCreate("product")} />}
         {view === "products" && <ItemList title="Produk Jadi" description="Kelola produk siap jual dan pantau stoknya." items={products} kind="product" onAdd={() => openCreate("product")} onNavigate={navigate} />}
         {view === "materials" && <MaterialList materials={materials} onAdd={() => openCreate("material")} />}
@@ -398,6 +441,12 @@ export default function Home() {
 }
 
 function Sidebar({ view, navigate, onPlan }: { view: View; navigate: (view: View) => void; onPlan: () => void }) {
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    } catch { /* ignore */ }
+  };
   return <aside className="sidebar">
     <div className="brand"><div className="brand-mark">DK</div><div><span className="brand-name">DapurKasir</span><span className="brand-sub">operasional kuliner</span></div></div>
     <nav aria-label="Navigasi utama">
@@ -408,8 +457,8 @@ function Sidebar({ view, navigate, onPlan }: { view: View; navigate: (view: View
     </nav>
     <div className="sidebar-bottom">
       <button className={`nav-item ${view === "settings" ? "active" : ""}`} onClick={() => navigate("settings")}><Settings size={17} />Pengaturan</button>
-      <div className="plan-card"><span className="badge badge-emerald">Free plan</span><strong>38 dari 50 transaksi</strong><p>Ruang cukup untuk operasional bulan ini.</p><button className="button button-primary" onClick={onPlan}>Lihat PRO <ChevronRight size={14} /></button></div>
-      <div className="profile-chip"><div className="avatar">AS</div><div><strong>Arum Sari</strong><span>Owner</span></div><button className="icon-button" style={{ marginLeft: "auto", width: 30, height: 30, border: 0 }} aria-label="Keluar"><LogOut size={14} /></button></div>
+      <div className="plan-card"><span className="badge badge-emerald">Free plan</span><strong>{salesCount} dari 50 transaksi</strong><p>{salesCount >= 40 ? "Hampir mencapai batas." : "Ruang cukup untuk operasional bulan ini."}</p><button className="button button-primary" onClick={onPlan}>Lihat PRO <ChevronRight size={14} /></button></div>
+      <div className="profile-chip"><div className="avatar">AS</div><div><strong>Arum Sari</strong><span>Owner</span></div><button className="icon-button" style={{ marginLeft: "auto", width: 30, height: 30, border: 0 }} aria-label="Keluar" onClick={handleLogout}><LogOut size={14} /></button></div>
     </div>
   </aside>;
 }
@@ -423,32 +472,37 @@ function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string
   return <div className="page-heading"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1>{description && <p>{description}</p>}</div>{action && <div className="heading-actions">{action}</div>}</div>;
 }
 
-function Dashboard({ products, materials, expenses, receivables, salesCount, dueReceivables, navigate }: { products: Product[]; materials: Material[]; expenses: Expense[]; receivables: Receivable[]; salesCount: number; dueReceivables: number; navigate: (view: View) => void }) {
-  const critical = materials.filter((item) => item.stock <= (item.unit === "pcs" ? 60 : 2));
-  const revenue = 4820000;
-  const cogs = 2265400;
-  const expenseTotal = expenses.reduce((sum, item) => sum + item.amount, 0);
+function Dashboard({ products, materials, expenses, receivables, salesCount, dueReceivables, dashboardData, businessName, navigate }: { products: Product[]; materials: Material[]; expenses: Expense[]; receivables: Receivable[]; salesCount: number; dueReceivables: number; dashboardData: DashboardData | null; businessName: string; navigate: (view: View) => void }) {
+  const critical = dashboardData?.criticalMaterials.length
+    ? dashboardData.criticalMaterials
+    : materials.filter((item) => item.stock <= (item.unit === "pcs" ? 60 : 2));
+  const revenue = dashboardData?.today.revenue ?? 0;
+  const cogs = dashboardData?.today.cogs ?? 0;
+  const expenseTotal = dashboardData?.today.expenses ?? expenses.reduce((sum, item) => sum + item.amount, 0);
+  const grossProfit = revenue - cogs;
+  const margin = revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0;
   const days = [{ day: "Sen", value: 52 }, { day: "Sel", value: 72 }, { day: "Rab", value: 45 }, { day: "Kam", value: 81 }, { day: "Jum", value: 66 }, { day: "Sab", value: 93 }, { day: "Min", value: 60 }];
+  const todayLabel = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
   return <main className="page">
-    <PageHeading eyebrow="Senin, 24 Agustus 2026" title="Selamat pagi, Arum." description="Ini yang perlu kamu tahu dari operasional hari ini." action={<><button className="button button-secondary" onClick={() => navigate("reports")}><FileText size={16} />Lihat laporan</button><button className="button button-primary" onClick={() => navigate("pos")}><Plus size={17} />Transaksi baru</button></>} />
+    <PageHeading eyebrow={todayLabel} title="Selamat datang." description="Ini yang perlu kamu tahu dari operasional hari ini." action={<><button className="button button-secondary" onClick={() => navigate("reports")}><FileText size={16} />Lihat laporan</button><button className="button button-primary" onClick={() => navigate("pos")}><Plus size={17} />Transaksi baru</button></>} />
     <div className="kpi-grid">
-      <Kpi label="Omzet hari ini" value={rupiah(revenue)} foot={<><ArrowUpRight size={13} className="positive" /><span className="positive">12,8%</span> dari kemarin</>} icon={<TrendingUp size={16} />} />
-      <Kpi label="Laba kotor" value={rupiah(revenue - cogs)} foot={<><span className="positive">Margin 53%</span><span> · hari ini</span></>} icon={<CircleDollarSign size={16} />} />
-      <Kpi label="Stok kritis" value={`${critical.length} bahan`} foot={<><span className="negative">Perlu ditindak</span><span> · minggu ini</span></>} icon={<Leaf size={16} />} tone="warning" />
-      <Kpi label="Piutang berjalan" value={rupiah(dueReceivables)} foot={<><Clock3 size={13} className="negative" /><span>2 jatuh tempo ≤ 7 hari</span></>} icon={<WalletCards size={16} />} tone="warning" />
+      <Kpi label="Omzet hari ini" value={revenue > 0 ? rupiah(revenue) : "Rp 0"} foot={<span>{dashboardData ? "Penjualan hari ini" : "Memuat data..."}</span>} icon={<TrendingUp size={16} />} />
+      <Kpi label="Laba kotor" value={grossProfit > 0 ? rupiah(grossProfit) : "Rp 0"} foot={<><span className={margin > 0 ? "positive" : ""}>Margin {margin}%</span><span> · hari ini</span></>} icon={<CircleDollarSign size={16} />} />
+      <Kpi label="Stok kritis" value={`${critical.length} bahan`} foot={<><span className="negative">Perlu ditindak</span><span> · sekarang</span></>} icon={<Leaf size={16} />} tone="warning" />
+      <Kpi label="Piutang berjalan" value={rupiah(dueReceivables)} foot={<><Clock3 size={13} className="negative" /><span>{dashboardData?.dueReceivables.length || 0} jatuh tempo</span></>} icon={<WalletCards size={16} />} tone="warning" />
     </div>
     <div className="dashboard-grid">
       <div className="dashboard-stack">
         <section className="card card-pad"><div className="section-header"><div><h2>Ritme penjualan</h2><p>Omzet 7 hari terakhir</p></div><button className="section-link" onClick={() => navigate("reports")}>Detail laporan <ChevronRight size={14} style={{ verticalAlign: "-2px" }} /></button></div><div className="chart-wrap">{days.map((item, index) => <div className={`chart-column ${index === days.length - 1 ? "today" : ""}`} key={item.day}><span className="chart-value">{shortRupiah(item.value * 10000)}</span><div className="chart-bar" style={{ height: `${item.value}%` }} /><span className="chart-label">{item.day}</span></div>)}</div><div className="progress-line"><span>{salesCount} transaksi bulan ini</span><span>Kuota Free {salesCount}/50</span></div><div className="progress" style={{ marginTop: 7 }}><span style={{ width: `${(salesCount / 50) * 100}%` }} /></div></section>
-        <section className="card card-pad"><div className="section-header"><div><h2>Aktivitas terbaru</h2><p>Catatan operasional terakhir</p></div><button className="section-link" onClick={() => navigate("reports")}>Buka riwayat <ChevronRight size={14} style={{ verticalAlign: "-2px" }} /></button></div><div className="activity-list"><Activity icon={<ShoppingCart size={15} />} title="Penjualan tunai selesai" detail="Sambal Bawang 150g · 2 item" value={rupiah(56000)} time="2 menit lalu" /><Activity icon={<Boxes size={15} />} title="Batch produksi selesai" detail="Sambal Bawang 150g · 50 jar" value="HPP Rp 13.200" time="1 jam lalu" /><Activity icon={<Truck size={15} />} title="Pembelian bahan dicatat" detail="Pasar Segar Bu Ani" value={rupiah(486000)} time="3 jam lalu" /></div></section>
+        <section className="card card-pad"><div className="section-header"><div><h2>Aktivitas terbaru</h2><p>Catatan operasional terakhir</p></div><button className="section-link" onClick={() => navigate("reports")}>Buka riwayat <ChevronRight size={14} style={{ verticalAlign: "-2px" }} /></button></div><div className="activity-list">{dashboardData?.recentActivity.sales.slice(0, 2).map((sale) => <Activity key={sale.id} icon={<ShoppingCart size={15} />} title={`Penjualan ${sale.method}`} detail={rupiah(sale.total)} value={rupiah(sale.total)} time={new Date(sale.date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} />)}{dashboardData?.recentActivity.batches.slice(0, 1).map((batch) => <Activity key={batch.id} icon={<Boxes size={15} />} title="Batch produksi selesai" detail={`${batch.product} · ${batch.qty} unit`} value={`HPP ${rupiah(batch.cogs)}`} time={new Date(batch.date).toLocaleDateString("id-ID")} />)}{dashboardData?.recentActivity.purchases.slice(0, 1).map((purchase) => <Activity key={purchase.id} icon={<Truck size={15} />} title="Pembelian bahan" detail={purchase.supplier} value={rupiah(purchase.total)} time={new Date(purchase.date).toLocaleDateString("id-ID")} />)}{!dashboardData && <p className="table-muted">Memuat aktivitas...</p>}</div></section>
       </div>
       <div className="dashboard-stack">
         <section className="card card-pad"><div className="section-header"><div><h2>Perlu perhatian</h2><p>Jangan sampai menghambat besok</p></div><Bell size={17} color="#b45309" /></div><div className="alert-list">{critical.slice(0, 4).map((item) => <div className="alert-row" key={item.id}><span className={`status-dot ${item.stock <= 1 ? "red" : ""}`} /><div className="row-main"><strong>{item.name}</strong><span>Stok tersisa {item.stock} {item.unit}</span></div><button className="section-link" onClick={() => navigate("purchases")}>Restock</button></div>)}{critical.length === 0 && <p className="table-muted">Semua stok bahan aman.</p>}</div></section>
-        <section className="card card-pad"><div className="section-header"><div><h2>Piutang terdekat</h2><p>Tagihan yang perlu dipantau</p></div><button className="section-link" onClick={() => navigate("receivables")}>Lihat semua</button></div><div className="alert-list">{receivables.filter((item) => item.amount > item.paid).slice(0, 3).map((item) => <div className="alert-row" key={item.id}><span className="status-dot red" /><div className="row-main"><strong>{item.customer}</strong><span>Jatuh tempo {dateLabel(item.due)}</span></div><span className="row-side">{rupiah(item.amount - item.paid)}</span></div>)}</div></section>
+        <section className="card card-pad"><div className="section-header"><div><h2>Piutang terdekat</h2><p>Tagihan yang perlu dipantau</p></div><button className="section-link" onClick={() => navigate("receivables")}>Lihat semua</button></div><div className="alert-list">{dashboardData?.dueReceivables.length ? dashboardData.dueReceivables.slice(0, 3).map((item, i) => <div className="alert-row" key={i}><span className="status-dot red" /><div className="row-main"><strong>{item.customer}</strong><span>Jatuh tempo {dateLabel(item.dueDate)}</span></div><span className="row-side">{rupiah(item.remaining)}</span></div>) : receivables.filter((item) => item.amount > item.paid).slice(0, 3).map((item) => <div className="alert-row" key={item.id}><span className="status-dot red" /><div className="row-main"><strong>{item.customer}</strong><span>Jatuh tempo {dateLabel(item.due)}</span></div><span className="row-side">{rupiah(item.amount - item.paid)}</span></div>)}</div></section>
         <section className="callout success"><Sparkles size={17} /><div><strong>Margin sehat hari ini</strong><p>Laba kotor berada 4,2% di atas rata-rata minggu ini.</p></div></section>
       </div>
     </div>
-    <div className="split-grid" style={{ marginTop: 18 }}><section className="card card-pad"><div className="section-header"><div><h2>Produk terlaris</h2><p>Kontribusi penjualan bulan ini</p></div><button className="section-link" onClick={() => navigate("products")}>Kelola produk</button></div><div className="activity-list">{products.slice(0, 3).map((product, index) => <div className="activity-row" key={product.id}><div className="item-avatar">0{index + 1}</div><div className="row-main"><strong>{product.name}</strong><span>{[86, 64, 48][index]} unit terjual</span></div><span className="row-side">{[27, 21, 16][index]}%</span></div>)}</div></section><section className="card card-pad"><div className="section-header"><div><h2>Ringkas paket</h2><p>Pemakaian bulan berjalan</p></div><span className="badge badge-emerald">FREE</span></div><div className="progress-line"><span>Transaksi POS</span><strong>{salesCount} / 50</strong></div><div className="progress"><span style={{ width: `${salesCount * 2}%` }} /></div><div className="progress-line"><span>Produk jadi</span><strong>{products.length} / 30</strong></div><div className="progress"><span style={{ width: `${(products.length / 30) * 100}%` }} /></div><div className="progress-line"><span>Bahan baku</span><strong>{materials.length} / 10</strong></div><div className="progress"><span style={{ width: `${(materials.length / 10) * 100}%` }} /></div></section></div>
+    <div className="split-grid" style={{ marginTop: 18 }}><section className="card card-pad"><div className="section-header"><div><h2>Produk terlaris</h2><p>Kontribusi penjualan bulan ini</p></div><button className="section-link" onClick={() => navigate("products")}>Kelola produk</button></div><div className="activity-list">{products.slice(0, 3).map((product, index) => <div className="activity-row" key={product.id}><div className="item-avatar">0{index + 1}</div><div className="row-main"><strong>{product.name}</strong><span>{[86, 64, 48][index]} unit terjual</span></div><span className="row-side">{[27, 21, 16][index]}%</span></div>)}</div></section><section className="card card-pad"><div className="section-header"><div><h2>Ringkas paket</h2><p>Pemakaian bulan berjalan</p></div><span className="badge badge-emerald">FREE</span></div><div className="progress-line"><span>Transaksi POS</span><strong>{dashboardData?.plan.salesCount ?? salesCount} / 50</strong></div><div className="progress"><span style={{ width: `${((dashboardData?.plan.salesCount ?? salesCount) / 50) * 100}%` }} /></div><div className="progress-line"><span>Produk jadi</span><strong>{dashboardData?.plan.productCount ?? products.length} / 30</strong></div><div className="progress"><span style={{ width: `${((dashboardData?.plan.productCount ?? products.length) / 30) * 100}%` }} /></div><div className="progress-line"><span>Bahan baku</span><strong>{dashboardData?.plan.materialCount ?? materials.length} / 10</strong></div><div className="progress"><span style={{ width: `${((dashboardData?.plan.materialCount ?? materials.length) / 10) * 100}%` }} /></div></section></div>
   </main>;
 }
 

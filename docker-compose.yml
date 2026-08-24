@@ -10,6 +10,11 @@ services:
       - dapurkasir_pgdata:/var/lib/postgresql/data
       - ./db/migrations/001_dapurkasir.sql:/docker-entrypoint-initdb.d/001_dapurkasir.sql:ro
       - ./db/migrations/002_accounting_features.sql:/docker-entrypoint-initdb.d/002_accounting_features.sql:ro
+      - ./db/migrations/003_security_fixes.sql:/docker-entrypoint-initdb.d/003_security_fixes.sql:ro
+      - ./db/migrations/004_email_verification.sql:/docker-entrypoint-initdb.d/004_email_verification.sql:ro
+      - ./db/migrations/005_fix_checkout_atomicity.sql:/docker-entrypoint-initdb.d/005_fix_checkout_atomicity.sql:ro
+      - ./db/migrations/006_fix_purchase_payable.sql:/docker-entrypoint-initdb.d/006_fix_purchase_payable.sql:ro
+      - ./db/migrations/007_fix_production_atomicity.sql:/docker-entrypoint-initdb.d/007_fix_production_atomicity.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dapurkasir} -d ${POSTGRES_DB:-dapurkasir}"]
       interval: 5s
@@ -45,6 +50,11 @@ services:
       NEXT_PUBLIC_BACKEND_ENABLED: "true"
       POSTGREST_URL: http://postgrest:3001
       POSTGREST_JWT_SECRET: ${POSTGREST_JWT_SECRET:?set POSTGREST_JWT_SECRET in EasyPanel}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in EasyPanel}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      EMAIL_FROM: ${EMAIL_FROM:-DapurKasir <noreply@dapurkasir.com>}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
     ports:
       - "${APP_PORT:-3000}:3000"
 
