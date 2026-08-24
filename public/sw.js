@@ -1,5 +1,5 @@
-const CACHE_NAME = "dapurkasir-shell-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "dapurkasir-shell-v2";
+const SHELL = ["/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)));
@@ -7,7 +7,13 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  // Buang cache versi lama, kalau tidak halaman hasil deploy baru tidak pernah muncul.
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener("fetch", (event) => {
@@ -23,6 +29,23 @@ self.addEventListener("fetch", (event) => {
     url.origin !== self.location.origin
   ) {
     // Network-only for API calls
+    return;
+  }
+
+  // Halaman HTML selalu ambil dari network dulu supaya versi terbaru langsung kepakai.
+  // Cache hanya jadi cadangan saat offline.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === "basic") {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))
+    );
     return;
   }
 
