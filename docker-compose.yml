@@ -15,6 +15,7 @@ services:
       - ./db/migrations/005_fix_checkout_atomicity.sql:/docker-entrypoint-initdb.d/005_fix_checkout_atomicity.sql:ro
       - ./db/migrations/006_fix_purchase_payable.sql:/docker-entrypoint-initdb.d/006_fix_purchase_payable.sql:ro
       - ./db/migrations/007_fix_production_atomicity.sql:/docker-entrypoint-initdb.d/007_fix_production_atomicity.sql:ro
+      - ./db/migrations/008_subscription_system.sql:/docker-entrypoint-initdb.d/008_subscription_system.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dapurkasir} -d ${POSTGRES_DB:-dapurkasir}"]
       interval: 5s
@@ -55,6 +56,10 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-DapurKasir <noreply@dapurkasir.com>}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@dapurkasir.com}
     ports:
       - "${APP_PORT:-3000}:3000"
 

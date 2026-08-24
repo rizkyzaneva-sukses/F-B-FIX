@@ -5,12 +5,14 @@ const PUBLIC_ROUTES = [
   "/login",
   "/register",
   "/reset-password",
+  "/pricing",
   "/api/auth/login",
   "/api/auth/register",
   "/api/auth/cashier-login",
   "/api/auth/logout",
   "/api/auth/verify-email",
   "/api/auth/reset-password",
+  "/api/webhooks/",
 ];
 
 function isPublicRoute(pathname: string): boolean {
