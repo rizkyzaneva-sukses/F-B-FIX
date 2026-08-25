@@ -48,7 +48,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import { backendRequest } from "@/lib/client-api";
 
-type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings";
+type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings" | "guide";
 type PaymentMethod = "TUNAI" | "QRIS" | "TRANSFER" | "HUTANG";
 type Product = { id: string; name: string; category: string; stock: number; unit: string; price: number; cogs: number; emoji: string; active: boolean };
 type Material = { id: string; name: string; stock: number; unit: string; lastBuy: number; supplier: string; active: boolean };
@@ -156,6 +156,7 @@ const navSections = [
   { label: "Workspace", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "pos", label: "Kasir POS", icon: ShoppingCart }] },
   { label: "Operasional", items: [{ id: "products", label: "Produk Jadi", icon: Package }, { id: "materials", label: "Bahan Baku", icon: Leaf }, { id: "production", label: "Produksi Batch", icon: Boxes }, { id: "purchases", label: "Pembelian", icon: Truck }, { id: "parties", label: "Pelanggan & Supplier", icon: Users }] },
   { label: "Keuangan", items: [{ id: "receivables", label: "Piutang", icon: WalletCards }, { id: "expenses", label: "Pengeluaran", icon: CircleDollarSign }, { id: "reports", label: "Laporan", icon: BarChart3 }] },
+  { label: "Bantuan", items: [{ id: "guide", label: "Panduan", icon: BookOpen }] },
 ];
 
 export default function Home() {
@@ -581,6 +582,7 @@ export default function Home() {
         {view === "receivables" && <ReceivableView receivables={receivables} onPay={payReceivable} />}
         {view === "expenses" && <ExpenseView expenses={expenses} onAdd={() => openCreate("expense")} />}
          {view === "reports" && <ReportView2 expenses={expenses} capitalEntries={capitalEntries} purchases={purchases} receivables={receivables} products={products} sales={sales} exportReport={exportReport} onAddCapital={() => openCreate("capital")} />}
+        {view === "guide" && <GuideView role={account.role} />}
         {view === "settings" && <SettingsView dark={dark} setDark={setDark} notify={notify} onReset={resetAllData} onSeed={fillDummyData} businessProfile={businessProfile} onSaveProfile={saveBusinessProfile} />}
         <BottomNav view={view} navigate={navigate} role={account.role} />
       </div>
@@ -909,5 +911,244 @@ function CashierModal({ cashiers, onClose, onSaved }: { cashiers: Array<{ id: st
         </div>
       )}
     </Modal>
+  );
+}
+function GuideView({ role }: { role: "OWNER" | "KASIR" }) {
+  const [tab, setTab] = useState<"panduan" | "studi">("panduan");
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const toggle = (id: string) => setOpenSection((current) => (current === id ? null : id));
+
+  return (
+    <main className="page">
+      <PageHeading eyebrow="Bantuan" title="Panduan DapurKasir" description={role === "KASIR" ? "Panduan lengkap untuk kasir." : "Panduan lengkap penggunaan aplikasi untuk owner dan kasir."} />
+      <div className="category-row" style={{ marginBottom: 18 }}>
+        <button className={`category-chip ${tab === "panduan" ? "active" : ""}`} onClick={() => setTab("panduan")}>Panduan</button>
+        <button className={`category-chip ${tab === "studi" ? "active" : ""}`} onClick={() => setTab("studi")}>Studi Kasus</button>
+      </div>
+      {tab === "panduan" ? <PanduanTab role={role} openSection={openSection} toggle={toggle} /> : <StudiKasusTab openSection={openSection} toggle={toggle} />}
+    </main>
+  );
+}
+
+function Accordion({ id, title, icon, children, isOpen, toggle }: { id: string; title: string; icon: ReactNode; children: ReactNode; isOpen: boolean; toggle: (id: string) => void }) {
+  return (
+    <section className="card" style={{ marginBottom: 10 }}>
+      <button onClick={() => toggle(id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "14px 16px", background: "none", border: "none", cursor: "pointer", textAlign: "left", color: "inherit", fontSize: "inherit" }}>
+        {icon}
+        <strong style={{ flex: 1, fontSize: 14 }}>{title}</strong>
+        <ChevronRight size={16} style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .2s", color: "var(--muted)" }} />
+      </button>
+      {isOpen && <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)", fontSize: 13, lineHeight: 1.7 }}>{children}</div>}
+    </section>
+  );
+}
+
+function Step({ num, title, children }: { num: number; title: string; children: ReactNode }) {
+  return <div style={{ display: "flex", gap: 10, marginTop: 10 }}><span className="badge badge-blue" style={{ minWidth: 22, textAlign: "center" }}>{num}</span><div><strong>{title}</strong><p style={{ margin: "2px 0 0", color: "var(--muted)" }}>{children}</p></div></div>;
+}
+
+function Tip({ children }: { children: ReactNode }) {
+  return <div className="callout" style={{ marginTop: 10 }}><Sparkles size={15} /><div><strong>Tips</strong><p style={{ margin: 0 }}>{children}</p></div></div>;
+}
+
+function PanduanTab({ role, openSection, toggle }: { role: "OWNER" | "KASIR"; openSection: string | null; toggle: (id: string) => void }) {
+  const ownerSections = (
+    <>
+      <Accordion id="dashboard" title="Dashboard" icon={<LayoutDashboard size={18} />} isOpen={openSection === "dashboard"} toggle={toggle}>
+        <p>Dashboard menampilkan ringkasan bisnis Anda dalam satu layar.</p>
+        <Step num={1} title="KPI Atas">Total penjualan, laba bersih, jumlah transaksi, dan piutang jatuh tempo ditampilkan dalam kartu di bagian atas.</Step>
+        <Step num={2} title="Grafik Penjualan">Grafik mingguan membantu Anda melihat tren penjualan dari waktu ke waktu.</Step>
+        <Step num={3} title="Aktivitas Terbaru">Penjualan, produksi, dan pembelian terakhir ditampilkan secara kronologis.</Step>
+        <Tip>Periksa dashboard setiap pagi untuk memantau kondisi bisnis sebelum memulai operasional.</Tip>
+      </Accordion>
+
+      <Accordion id="products" title="Produk Jadi" icon={<Package size={18} />} isOpen={openSection === "products"} toggle={toggle}>
+        <p>Kelola semua produk siap jual beserta harga dan stoknya.</p>
+        <Step num={1} title="Tambah Produk">Klik tombol &quot;Tambah produk&quot;, isi nama, harga jual, stok awal, dan satuan.</Step>
+        <Step num={2} title="Edit Produk">Klik nama produk untuk mengubah harga, stok, atau menonaktifkan produk.</Step>
+        <Step num={3} title="Import Massal">Gunakan tombol &quot;Import&quot; untuk menambah banyak produk sekaligus via file CSV. Unduh template terlebih dahulu.</Step>
+        <Step num={4} title="HPP (Harga Pokok Penjualan)">HPP diperbarui otomatis setiap kali Anda menjalankan produksi batch.</Step>
+        <Tip>Satuan yang konsisten (pcs, kg, liter) membantu perhitungan stok tetap akurat.</Tip>
+      </Accordion>
+
+      <Accordion id="materials" title="Bahan Baku" icon={<Leaf size={18} />} isOpen={openSection === "materials"} toggle={toggle}>
+        <p>Pantau stok dan harga beli bahan baku yang digunakan untuk produksi.</p>
+        <Step num={1} title="Tambah Bahan">Isi nama bahan, satuan, stok awal, dan harga beli per unit.</Step>
+        <Step num={2} title="Stok Otomatis">Stok berkurang saat produksi dan bertambah saat pembelian dicatat.</Step>
+        <Step num={3} title="Import Massal">Sama seperti produk, Anda bisa import bahan baku via CSV.</Step>
+        <Tip>Pantau stok bahan baku secara berkala untuk menghindari kehabisan saat produksi.</Tip>
+      </Accordion>
+
+      <Accordion id="production" title="Produksi Batch" icon={<Boxes size={18} />} isOpen={openSection === "production"} toggle={toggle}>
+        <p>Ubah bahan baku menjadi produk jadi dengan perhitungan HPP yang akurat.</p>
+        <Step num={1} title="Buat Batch">Klik &quot;Buat batch produksi&quot;, pilih produk output dan jumlah yang dihasilkan.</Step>
+        <Step num={2} title="Pilih Bahan">Tambahkan satu atau lebih bahan baku beserta jumlah yang digunakan.</Step>
+        <Step num={3} title="Multi-Output">Satu batch bisa menghasilkan beberapa produk kemasan berbeda. Klik &quot;Tambah kemasan&quot; untuk menambah varian output.</Step>
+        <Step num={4} title="Biaya Lain">Tambahkan biaya tambahan seperti gas, kemasan, atau tenaga kerja jika diperlukan.</Step>
+        <Step num={5} title="HPP Otomatis">Sistem menghitung HPP per unit dari total biaya dibagi total output. Stok bahan berkurang dan stok produk bertambah otomatis.</Step>
+        <Tip>Contoh multi-output: Bahan A+B+C+D menghasilkan Chili Oil 250ml (4 pcs), 500ml (1 pc), dan 100ml (10 pcs).</Tip>
+      </Accordion>
+
+      <Accordion id="purchases" title="Pembelian" icon={<Truck size={18} />} isOpen={openSection === "purchases"} toggle={toggle}>
+        <p>Catat pembelian bahan baku dari supplier.</p>
+        <Step num={1} title="Catat Pembelian">Pilih supplier, pilih bahan, masukkan kuantitas dan harga beli.</Step>
+        <Step num={2} title="Status Pembayaran">Pilih &quot;Lunas&quot; jika langsung bayar, atau &quot;Utang&quot; jika mencicil.</Step>
+        <Step num={3} title="Stok Bertambah">Stok bahan baku bertambah otomatis setelah pembelian disimpan.</Step>
+        <Step num={4} title="Bayar Utang">Jika ada utang, buka menu pembelian untuk mencatat pembayaran cicilan.</Step>
+        <Tip>Harga beli terakhir akan digunakan untuk menghitung HPP saat produksi.</Tip>
+      </Accordion>
+
+      <Accordion id="parties" title="Pelanggan & Supplier" icon={<Users size={18} />} isOpen={openSection === "parties"} toggle={toggle}>
+        <p>Kelola data pelanggan dan supplier dalam satu tempat.</p>
+        <Step num={1} title="Tambah Kontak">Isi nama dan tipe (Pelanggan atau Supplier).</Step>
+        <Step num={2} title="Kaitkan dengan Transaksi">Pilih supplier saat pembelian, pelanggan saat penjualan dengan piutang.</Step>
+        <Tip>Menjaga data kontak tetap rapi membantu pelacakan piutang dan utang.</Tip>
+      </Accordion>
+
+      <Accordion id="receivables" title="Piutang" icon={<WalletCards size={18} />} isOpen={openSection === "receivables"} toggle={toggle}>
+        <p>Lacak penjualan yang belum dibayar lunas oleh pelanggan.</p>
+        <Step num={1} title="Otomatis dari POS">Piutang tercipta otomatis saat Anda memilih metode &quot;Piutang&quot; di kasir.</Step>
+        <Step num={2} title="Catat Pembayaran">Klik piutang yang ada, masukkan nominal pembayaran dari pelanggan.</Step>
+        <Step num={3} title="Jatuh Tempo">Sistem menandai piutang yang sudah jatuh tempo untuk memudahkan penagihan.</Step>
+        <Tip>Pantau piutang jatuh tempo secara rutin untuk menjaga arus kas tetap sehat.</Tip>
+      </Accordion>
+
+      <Accordion id="expenses" title="Pengeluaran" icon={<CircleDollarSign size={18} />} isOpen={openSection === "expenses"} toggle={toggle}>
+        <p>Catat semua biaya operasional dan prive pemilik.</p>
+        <Step num={1} title="Beban Operasional">Biaya seperti sewa, listrik, gaji, transport, dan bahan habis pakai.</Step>
+        <Step num={2} title="Prive / Tarik Modal">Pencatatan terpisah untuk uang yang diambil pemilik untuk keperluan pribadi.</Step>
+        <Step num={3} title="Kategori">Gunakan kategori yang konsisten untuk memudahkan analisis di laporan.</Step>
+        <Tip>Pisahkan antara beban operasional dan prive agar laporan laba rugi akurat.</Tip>
+      </Accordion>
+
+      <Accordion id="reports" title="Laporan" icon={<BarChart3 size={18} />} isOpen={openSection === "reports"} toggle={toggle}>
+        <p>Tiga laporan keuangan utama untuk memantau kesehatan bisnis.</p>
+        <Step num={1} title="Laba Rugi">Menampilkan omzet, HPP, beban operasional, dan laba bersih pada periode tertentu.</Step>
+        <Step num={2} title="Arus Kas">Menampilkan pemasukan dan pengeluaran kas secara riil.</Step>
+        <Step num={3} title="Neraca">Menampilkan posisi aset (kas, piutang, persediaan) dan kewajiban (utang).</Step>
+        <Step num={4} title="Filter Periode">Gunakan filter tanggal untuk melihat laporan bulanan atau periode tertentu.</Step>
+        <Step num={5} title="Export CSV">Unduh data laporan dalam format CSV untuk analisis lebih lanjut.</Step>
+        <Tip>Periksa laporan laba rugi setiap akhir bulan untuk mengevaluasi kinerja bisnis.</Tip>
+      </Accordion>
+
+      <Accordion id="pos" title="Kasir POS" icon={<ShoppingCart size={18} />} isOpen={openSection === "pos"} toggle={toggle}>
+        <p>Halaman kasir untuk memproses penjualan secara langsung.</p>
+        <Step num={1} title="Cari Produk">Gunakan kolom pencarian atau filter kategori untuk menemukan produk.</Step>
+        <Step num={2} title="Tambah ke Keranjang">Tap produk untuk menambahkan ke keranjang. Atur jumlah dengan tombol +/-.</Step>
+        <Step num={3} title="Bayar">Klik &quot;Bayar sekarang&quot;, pilih metode pembayaran (Tunai, Transfer, QRIS, atau Piutang).</Step>
+        <Step num={4} title="Struk">Setelah pembayaran berhasil, struk dapat dicetak atau dikirim via WhatsApp.</Step>
+        <Tip>Stok produk berkurang otomatis setelah transaksi berhasil.</Tip>
+      </Accordion>
+
+      <Accordion id="settings" title="Pengaturan" icon={<Settings size={18} />} isOpen={openSection === "settings"} toggle={toggle}>
+        <p>Kelola profil bisnis, kasir, dan pengaturan akun.</p>
+        <Step num={1} title="Profil Bisnis">Ubah nama usaha dan informasi dasar bisnis.</Step>
+        <Step num={2} title="Kelola Kasir">Tambah atau kelola akun kasir dengan PIN 6 digit.</Step>
+        <Step num={3} title="Mode Gelap">Aktifkan mode gelap untuk kenyamanan mata.</Step>
+        <Tip>Kasir hanya bisa mengakses halaman POS dan ringkasan. Semua fitur lain hanya untuk owner.</Tip>
+      </Accordion>
+    </>
+  );
+
+  const kasirSections = (
+    <>
+      <Accordion id="kasir-login" title="Login Kasir" icon={<UserRound size={18} />} isOpen={openSection === "kasir-login"} toggle={toggle}>
+        <p>Setiap kasir memiliki akun terpisah dengan PIN 6 digit.</p>
+        <Step num={1} title="Buka Halaman Kasir">Akses halaman kasir dari link yang diberikan owner.</Step>
+        <Step num={2} title="Masukkan PIN">Masukkan PIN 6 digit yang telah didaftarkan owner.</Step>
+        <Step num={3} title="Mulai Berjualan">Setelah login, Anda akan diarahkan ke halaman POS.</Step>
+        <Tip>Jangan bagikan PIN Anda kepada orang lain. Hubungi owner jika lupa PIN.</Tip>
+      </Accordion>
+
+      <Accordion id="kasir-pos" title="Cara Berjualan" icon={<ShoppingCart size={18} />} isOpen={openSection === "kasir-pos"} toggle={toggle}>
+        <p>Proses penjualan dari awal hingga cetak struk.</p>
+        <Step num={1} title="Cari Produk">Gunakan kolom pencarian di bagian atas untuk menemukan produk. Anda juga bisa filter berdasarkan kategori.</Step>
+        <Step num={2} title="Tambah ke Keranjang">Tap kartu produk untuk menambahkan ke keranjang. Jumlah default adalah 1.</Step>
+        <Step num={3} title="Atur Jumlah">Gunakan tombol + dan - di keranjang untuk mengubah jumlah pesanan.</Step>
+        <Step num={4} title="Hapus Item">Kurangi jumlah ke 0 untuk menghapus item dari keranjang.</Step>
+        <Step num={5} title="Proses Pembayaran">Klik &quot;Bayar sekarang&quot;. Pilih metode: Tunai, Transfer, atau QRIS.</Step>
+        <Step num={6} title="Cetak Struk">Setelah pembayaran berhasil, klik ikon printer untuk mencetak struk.</Step>
+        <Tip>Periksa kembali pesanan sebelum memproses pembayaran. Transaksi yang sudah dibatalkan tidak dapat dihapus.</Tip>
+      </Accordion>
+
+      <Accordion id="kasir-tips" title="Tips untuk Kasir" icon={<Sparkles size={18} />} isOpen={openSection === "kasir-tips"} toggle={toggle}>
+        <p>Beberapa tips untuk kelancaran operasional kasir.</p>
+        <div style={{ marginTop: 8 }}><strong>Sebelum shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Pastikan perangkat terhubung ke internet.</li><li>Periksa stok produk yang akan dijual hari ini.</li><li>Hubungi owner jika ada produk yang stoknya habis.</li></ul></div>
+        <div style={{ marginTop: 8 }}><strong>Selama shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Gunakan pencarian untuk mempercepat transaksi.</li><li>Konfirmasi jumlah dan total sebelum memproses pembayaran.</li><li>Cetak struk untuk setiap transaksi sebagai bukti.</li></ul></div>
+        <div style={{ marginTop: 8 }}><strong>Akhir shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Logout dari akun kasir Anda.</li><li>Laporkan kendala yang dialami selama shift kepada owner.</li></ul></div>
+      </Accordion>
+    </>
+  );
+
+  return <div>{role === "KASIR" ? kasirSections : ownerSections}</div>;
+}
+
+function StudiKasusTab({ openSection, toggle }: { openSection: string | null; toggle: (id: string) => void }) {
+  return (
+    <div>
+      <Accordion id="case-warung" title="Studi Kasus 1: Warung Makan Sederhana" icon={<Store size={18} />} isOpen={openSection === "case-warung"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Pak Budi memiliki warung makan sederhana. Setiap hari ia membeli bahan baku (beras, ayam, sayuran, minyak) dan memasaknya menjadi menu siap saji.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Daftar dan Buat Akun">Buka aplikasi, daftar dengan email usaha, dan masukkan nama warung.</Step>
+        <Step num={2} title="Tambah Bahan Baku">Buka menu Bahan Baku, tambahkan: Beras (kg), Ayam (kg), Sayuran (kg), Minyak (liter).</Step>
+        <Step num={3} title="Tambah Produk Jadi">Buka menu Produk Jadi, tambahkan: Nasi Ayam (pcs), Nasi Sayur (pcs), Es Teh (gelas).</Step>
+        <Step num={4} title="Catat Pembelian">Setiap pagi, buka menu Pembelian, catat bahan yang dibeli beserta harga dan jumlahnya.</Step>
+        <Step num={5} title="Produksi Batch">Sebelum jam makan siang, buka Produksi Batch. Pilih output Nasi Ayam qty 50, masukkan bahan yang digunakan.</Step>
+        <Step num={6} title="Jual di Kasir">Buka halaman Kasir POS, tap produk yang dipesan pelanggan, lalu proses pembayaran.</Step>
+        <Step num={7} title="Pantau Laporan">Di akhir hari, buka Laporan untuk melihat laba rugi hari ini.</Step>
+        <Tip>Untuk warung sederhana, Anda bisa langsung menjual tanpa produksi batch jika tidak ingin melacak HPP secara detail.</Tip>
+      </Accordion>
+
+      <Accordion id="case-sambal" title="Studi Kasus 2: Usaha Sambal Olahan (Multi-Output)" icon={<Package size={18} />} isOpen={openSection === "case-sambal"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Mbak Rina memproduksi sambal olahan dalam berbagai kemasan. Dari satu batch produksi, ia menghasilkan sambal dalam kemasan 100ml, 250ml, dan 500ml.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Siapkan Bahan Baku">Tambahkan di menu Bahan Baku: Cabai (kg), Bawang (kg), Gula (kg), Minyak (liter), Cuka (liter).</Step>
+        <Step num={2} title="Siapkan Produk Jadi">Tambahkan di menu Produk Jadi: Sambal 100ml, Sambal 250ml, Sambal 500ml. Setiap kemasan adalah produk terpisah.</Step>
+        <Step num={3} title="Beli Bahan">Catat pembelian bahan baku dari supplier di menu Pembelian.</Step>
+        <Step num={4} title="Produksi Multi-Output">Buka Produksi Batch, klik Tambah kemasan untuk setiap varian. Isi: Sambal 100ml (10 pcs), Sambal 250ml (4 pcs), Sambal 500ml (1 pc). Tambahkan semua bahan yang digunakan.</Step>
+        <Step num={5} title="HPP Terhitung">Sistem menghitung HPP dari total biaya bahan dibagi total seluruh unit output (10+4+1 = 15 unit).</Step>
+        <Step num={6} title="Jual Beragam Saluran">Jual langsung di kasir, atau catat sebagai piutang jika menjual ke reseller atau toko.</Step>
+        <Step num={7} title="Pantau Stok">Setiap kemasan memiliki stok terpisah. Pantau di menu Produk Jadi untuk tahu kapan harus produksi lagi.</Step>
+        <Tip>Pastikan setiap kemasan (100ml, 250ml, 500ml) dibuat sebagai produk terpisah karena memiliki harga jual dan stok yang berbeda.</Tip>
+      </Accordion>
+
+      <Accordion id="case-kopi" title="Studi Kasus 3: Kedai Kopi" icon={<ShoppingBag size={18} />} isOpen={openSection === "case-kopi"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Mas Andi membuka kedai kopi. Ia membeli kopi bubuk, susu, gula, dan cup, lalu meraciknya menjadi minuman siap saji.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Bahan Baku">Tambahkan: Kopi Bubuk (kg), Susu (liter), Gula (kg), Cup 16oz (pcs), Cup 12oz (pcs), Es Batu (kg).</Step>
+        <Step num={2} title="Produk Jadi">Tambahkan: Kopi Susu 16oz, Kopi Susu 12oz, Americano, Es Teh.</Step>
+        <Step num={3} title="Pembelian Rutin">Catat pembelian bahan setiap minggu. Harga beli terakhir akan otomatis tercatat.</Step>
+        <Step num={4} title="Produksi Harian">Setiap pagi, buat batch produksi untuk stok hari ini. Misal: 30 cup Kopi Susu 16oz, 20 cup Kopi Susu 12oz.</Step>
+        <Step num={5} title="POS Cepat">Di jam sibuk, gunakan kolom pencarian di kasir untuk mempercepat transaksi. Tap produk, bayar, struk.</Step>
+        <Step num={6} title="Catat Pengeluaran">Catat biaya operasional seperti sewa, listrik, dan gaji karyawan di menu Pengeluaran.</Step>
+        <Step num={7} title="Evaluasi Bulanan">Buka Laporan Laba Rugi setiap akhir bulan untuk mengevaluasi margin keuntungan.</Step>
+        <Tip>Untuk kedai kopi dengan menu sederhana, Anda bisa menjual langsung tanpa produksi batch dan mencatat HPP secara manual.</Tip>
+      </Accordion>
+
+      <Accordion id="case-toko" title="Studi Kasus 4: Toko Kelontong" icon={<Store size={18} />} isOpen={openSection === "case-toko"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Ibu Sari memiliki toko kelontong yang menjual berbagai kebutuhan sehari-hari. Tidak ada proses produksi, hanya beli jual.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Setup Produk">Tambahkan semua produk di menu Produk Jadi: Minyak Goreng (liter), Gula (kg), Telur (butir), Sabun (pcs), dan lainnya.</Step>
+        <Step num={2} title="Import Massal">Jika produk banyak, gunakan fitur Import CSV untuk menambah ratusan produk sekaligus.</Step>
+        <Step num={3} title="Catat Stok Awal">Masukkan stok awal setiap produk saat pertama kali mendaftar.</Step>
+        <Step num={4} title="Pembelian dari Distributor">Setiap kali menerima kiriman barang, catat di menu Pembelian dengan nama supplier dan detail barang.</Step>
+        <Step num={5} title="Jual di Kasir">Setiap pelanggan datang, buka kasir, tap produk, dan proses pembayaran.</Step>
+        <Step num={6} title="Kelola Piutang">Jika ada pelanggan yang berhutang, pilih metode Piutang saat pembayaran. Catat pelunasan di menu Piutang.</Step>
+        <Step num={7} title="Monitoring Stok">Pantau stok secara berkala. Sistem akan menandai stok rendah dengan badge kuning.</Step>
+        <Tip>Toko kelontong tidak memerlukan fitur produksi. Fokus pada pencatatan pembelian dan penjualan yang konsisten.</Tip>
+      </Accordion>
+
+      <Accordion id="case-grosir" title="Studi Kasus 5: Usaha Grosir dengan Piutang" icon={<Truck size={18} />} isOpen={openSection === "case-grosir"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Pak Hendri memiliki usaha grosir yang menjual ke warung-warung. Sebagian besar transaksi adalah piutang dengan jatuh tempo 30 hari.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Daftar Pelanggan">Tambahkan semua warung langganan di menu Pelanggan dan Supplier.</Step>
+        <Step num={2} title="Proses Penjualan">Saat warung memesan, buka kasir, pilih produk, lalu pilih metode Piutang saat pembayaran.</Step>
+        <Step num={3} title="Pantau Piutang">Buka menu Piutang untuk melihat daftar piutang dan tanggal jatuh tempo.</Step>
+        <Step num={4} title="Catat Pembayaran">Saat warung membayar, klik piutang yang bersangkutan dan masukkan nominal pembayaran.</Step>
+        <Step num={5} title="Tagih Piutang Jatuh Tempo">Sistem menandai piutang yang sudah jatuh tempo. Gunakan fitur kirim WA untuk mengingatkan pelanggan.</Step>
+        <Step num={6} title="Laporan Keuangan">Pantau total piutang di laporan neraca untuk memastikan arus kas tetap sehat.</Step>
+        <Tip>Jaga rasio piutang terhadap omzet tetap sehat. Jika piutang terlalu besar, pertimbangkan untuk memperketat kebijakan kredit.</Tip>
+      </Accordion>
+    </div>
   );
 }
