@@ -194,6 +194,7 @@ export default function Home() {
   const [b2bInvoices, setB2bInvoices] = useState<Invoice[]>([]);
   const [b2bAging, setB2bAging] = useState<AgingRow[]>([]);
   const [b2bSelectedSO, setB2bSelectedSO] = useState<SalesOrder | null>(null);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
   useEffect(() => {
     if (BACKEND_ENABLED) {
@@ -730,7 +731,7 @@ export default function Home() {
          {view === "b2b-aging" && <B2BAgingView aging={b2bAging} />}
          {view === "guide" && <GuideView role={account.role} />}
         {view === "settings" && <SettingsView dark={dark} setDark={setDark} notify={notify} onReset={resetAllData} onSeed={fillDummyData} businessProfile={businessProfile} onSaveProfile={saveBusinessProfile} />}
-        <BottomNav view={view} navigate={navigate} role={account.role} />
+        <BottomNav view={view} navigate={navigate} role={account.role} onMenu={() => setMobileSheetOpen(true)} />
       </div>
       {modal === "product" && <ItemModal kind="product" onClose={() => setModal(null)} onSave={saveProduct} />}
       {modal === "material" && <ItemModal kind="material" onClose={() => setModal(null)} onSave={saveProduct} />}
@@ -745,6 +746,7 @@ export default function Home() {
       {modal === "b2b-delivery" && <B2BDeliveryModal orders={b2bOrders.filter((so) => so.status === "CONFIRMED")} onClose={() => setModal(null)} onSave={createB2BDelivery} />}
       {modal === "b2b-invoice" && <B2BInvoiceModal orders={b2bOrders.filter((so) => so.status === "DELIVERED")} onClose={() => setModal(null)} onSave={createB2BInvoice} />}
       {toast && <div className={`toast ${toast.tone}`} role="status"><Check size={16} />{toast.message}</div>}
+      {mobileSheetOpen && <MobileNavSheet view={view} navigate={(v) => { navigate(v); setMobileSheetOpen(false); }} onClose={() => setMobileSheetOpen(false)} role={account.role} />}
     </div>
   );
 }
@@ -781,10 +783,35 @@ function Sidebar({ view, navigate, onPlan, salesCount, plan, account }: { view: 
   </aside>;
 }
 
-function BottomNav({ view, navigate, role }: { view: View; navigate: (view: View) => void; role: "OWNER" | "KASIR" }) {
+function MobileNavSheet({ view, navigate, onClose, role }: { view: View; navigate: (view: View) => void; onClose: () => void; role: "OWNER" | "KASIR" }) {
+  return <div className="mobile-sheet-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="mobile-sheet" role="dialog" aria-label="Navigasi">
+      <div className="mobile-sheet-header">
+        <div className="brand"><div className="brand-mark">DK</div><div><span className="brand-name">DapurKasir</span><span className="brand-sub">Navigasi</span></div></div>
+        <button className="icon-button" onClick={onClose} aria-label="Tutup"><X size={17} /></button>
+      </div>
+      <div className="mobile-sheet-body">
+        {navSections.map((section) => {
+          const items = role === "KASIR" ? section.items.filter((item) => CASHIER_VIEWS.includes(item.id as View)) : section.items;
+          if (!items.length) return null;
+          return <div className="mobile-sheet-group" key={section.label}>
+            <div className="mobile-sheet-label">{section.label}</div>
+            {items.map((item) => { const Icon = item.icon; return <button key={item.id} className={`mobile-sheet-item ${view === item.id ? "active" : ""}`} onClick={() => navigate(item.id as View)}><Icon size={18} />{item.label}</button>; })}
+          </div>;
+        })}
+        <div className="mobile-sheet-group">
+          <div className="mobile-sheet-label">Lainnya</div>
+          <button className={`mobile-sheet-item ${view === "settings" ? "active" : ""}`} onClick={() => navigate("settings")}><Settings size={18} />Pengaturan</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function BottomNav({ view, navigate, role, onMenu }: { view: View; navigate: (view: View) => void; role: "OWNER" | "KASIR"; onMenu: () => void }) {
   const all: { id: View; label: string; icon: typeof LayoutDashboard }[] = [{ id: "pos", label: "Kasir", icon: ShoppingCart }, { id: "production", label: "Produksi", icon: Boxes }, { id: "dashboard", label: "Ringkasan", icon: LayoutDashboard }, { id: "settings", label: "Menu", icon: MoreHorizontal }];
   const items = role === "KASIR" ? all.filter((item) => CASHIER_VIEWS.includes(item.id)) : all;
-  return <nav className="bottom-nav" aria-label="Navigasi mobile">{items.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={19} />{item.label}</button>; })}</nav>;
+  return <nav className="bottom-nav" aria-label="Navigasi mobile">{items.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => item.id === "settings" ? onMenu() : navigate(item.id)}><Icon size={19} />{item.label}</button>; })}</nav>;
 }
 
 function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: ReactNode }) {
