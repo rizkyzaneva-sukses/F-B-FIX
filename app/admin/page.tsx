@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import {
   BarChart3,
   Building2,
-  ChevronRight,
   CreditCard,
   LayoutDashboard,
   Search,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { backendRequest } from "@/lib/client-api";
@@ -57,6 +57,8 @@ type Business = {
   } | null;
 };
 
+type AdminView = "dashboard" | "businesses" | "users" | "payments";
+
 const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -73,6 +75,7 @@ export default function AdminPage() {
   const [planFilter, setPlanFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [view, setView] = useState<AdminView>("dashboard");
 
   useEffect(() => {
     Promise.all([
@@ -150,19 +153,19 @@ export default function AdminPage() {
         <nav>
           <div className="nav-group">
             <div className="nav-label">Admin</div>
-            <button className="nav-item active">
+            <button className={`nav-item${view === "dashboard" ? " active" : ""}`} onClick={() => setView("dashboard")}>
               <LayoutDashboard size={17} />
               Dashboard
             </button>
-            <button className="nav-item">
+            <button className={`nav-item${view === "businesses" ? " active" : ""}`} onClick={() => setView("businesses")}>
               <Building2 size={17} />
               Bisnis
             </button>
-            <button className="nav-item">
+            <button className={`nav-item${view === "users" ? " active" : ""}`} onClick={() => setView("users")}>
               <Users size={17} />
               Pengguna
             </button>
-            <button className="nav-item">
+            <button className={`nav-item${view === "payments" ? " active" : ""}`} onClick={() => setView("payments")}>
               <CreditCard size={17} />
               Pembayaran
             </button>
@@ -174,11 +177,16 @@ export default function AdminPage() {
         <header className="topbar">
           <div className="topbar-context">
             <strong>Admin Panel</strong>
-            <span> / </span>Dashboard
+            <span> / </span>
+            {view === "dashboard" && "Dashboard"}
+            {view === "businesses" && "Bisnis"}
+            {view === "users" && "Pengguna"}
+            {view === "payments" && "Pembayaran"}
           </div>
         </header>
 
         <main className="page">
+          {view === "dashboard" && (<>
           {/* Overview Stats */}
           <div className="kpi-grid">
             <div className="kpi-card">
@@ -230,7 +238,9 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+          </>)}
 
+          {(view === "dashboard" || view === "businesses") && (<>
           {/* Businesses Table */}
           <section className="card" style={{ marginTop: 24 }}>
             <div className="card-pad">
@@ -335,7 +345,9 @@ export default function AdminPage() {
               </table>
             </div>
           </section>
+          </>)}
 
+          {view === "dashboard" && (<>
           {/* Recent Businesses */}
           <section className="card card-pad" style={{ marginTop: 24 }}>
             <h2>Bisnis Terbaru</h2>
@@ -356,6 +368,38 @@ export default function AdminPage() {
               ))}
             </div>
           </section>
+          </>)}
+
+          {view === "users" && (
+          <section className="card card-pad" style={{ marginTop: 24 }}>
+            <h2>Manajemen Pengguna</h2>
+            <p style={{ color: "#64748b", marginTop: 8 }}>
+              Total pengguna aktif: {stats?.overview.activeUsers || 0} / {stats?.overview.totalUsers || 0}
+            </p>
+          </section>
+          )}
+
+          {view === "payments" && (
+          <section className="card card-pad" style={{ marginTop: 24 }}>
+            <h2>Pembayaran</h2>
+            <div className="kpi-grid" style={{ marginTop: 16 }}>
+              <div className="kpi-card">
+                <div className="kpi-top">
+                  <span className="kpi-label">Pendapatan Bulan Ini</span>
+                  <CreditCard size={16} />
+                </div>
+                <p className="kpi-value">{rupiah(stats?.revenue.thisMonth || 0)}</p>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-top">
+                  <span className="kpi-label">Pembayaran Bulan Ini</span>
+                  <TrendingUp size={16} />
+                </div>
+                <p className="kpi-value">{stats?.revenue.paymentsThisMonth || 0}</p>
+              </div>
+            </div>
+          </section>
+          )}
         </main>
       </div>
     </div>
