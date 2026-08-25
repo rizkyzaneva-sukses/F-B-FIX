@@ -48,7 +48,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import { backendRequest } from "@/lib/client-api";
 
-type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings" | "guide";
+type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings" | "guide" | "b2b-orders" | "b2b-deliveries" | "b2b-invoices" | "b2b-aging";
 type PaymentMethod = "TUNAI" | "QRIS" | "TRANSFER" | "HUTANG";
 type Product = { id: string; name: string; category: string; stock: number; unit: string; price: number; cogs: number; emoji: string; active: boolean };
 type Material = { id: string; name: string; stock: number; unit: string; lastBuy: number; supplier: string; active: boolean };
@@ -62,6 +62,12 @@ type PnlReport = { revenue: number; cogs: number; gross_profit: number; expenses
 type SaleSummary = { id: string; date: string; total: number; cogs: number };
 type Batch = { id: string; code: string; date: string; product: string; qty: number; cogs: number };
 type Toast = { message: string; tone: "success" | "error" | "default" };
+type B2BOrderItem = { id: string; item_id: string; qty: number; unit_price: number; subtotal: number; item_name?: string; unit_code?: string };
+type SalesOrder = { id: string; customer_id: string; customer_name: string; customer_phone?: string; order_date: string; status: "DRAFT" | "CONFIRMED" | "DELIVERED" | "INVOICED" | "CANCELLED"; payment_terms_days: number; total_amount: number; notes: string; items: B2BOrderItem[] };
+type DeliveryOrder = { id: string; sales_order_id: string; customer_name?: string; so_date?: string; delivery_date: string; status: "PENDING" | "DELIVERED"; notes: string; driver_name: string; items: Array<{ id: string; item_id: string; qty: number; item_name?: string; unit_code?: string }> };
+type Invoice = { id: string; sales_order_id: string; delivery_order_id?: string; invoice_number: string; invoice_date: string; due_date: string; total_amount: number; paid_amount: number; status: "UNPAID" | "PARTIAL" | "PAID" | "OVERDUE"; notes: string; customer_name?: string; payments?: InvoicePayment[] };
+type InvoicePayment = { id: string; invoice_id: string; payment_date: string; amount: number; payment_method: string; notes: string };
+type AgingRow = { invoice_id: string; invoice_number: string; customer_name: string; invoice_date: string; due_date: string; total_amount: number; paid_amount: number; outstanding: number; days_overdue: number; age_bucket: string };
 
 const demoProducts: Product[] = [
   { id: "p1", name: "Sambal Bawang 150g", category: "Sambal", stock: 42, unit: "jar", price: 28000, cogs: 13200, emoji: "SB", active: true },
@@ -154,6 +160,7 @@ const CASHIER_VIEWS: View[] = ["pos", "settings"];
 
 const navSections = [
   { label: "Workspace", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "pos", label: "Kasir POS", icon: ShoppingCart }] },
+  { label: "B2B", items: [{ id: "b2b-orders", label: "Sales Order", icon: FileText }, { id: "b2b-deliveries", label: "Surat Jalan", icon: Truck }, { id: "b2b-invoices", label: "Invoice", icon: Receipt }, { id: "b2b-aging", label: "Aging Piutang", icon: Clock3 }] },
   { label: "Operasional", items: [{ id: "products", label: "Produk Jadi", icon: Package }, { id: "materials", label: "Bahan Baku", icon: Leaf }, { id: "production", label: "Produksi Batch", icon: Boxes }, { id: "purchases", label: "Pembelian", icon: Truck }, { id: "parties", label: "Pelanggan & Supplier", icon: Users }] },
   { label: "Keuangan", items: [{ id: "receivables", label: "Piutang", icon: WalletCards }, { id: "expenses", label: "Pengeluaran", icon: CircleDollarSign }, { id: "reports", label: "Laporan", icon: BarChart3 }] },
   { label: "Bantuan", items: [{ id: "guide", label: "Panduan", icon: BookOpen }] },
@@ -178,10 +185,15 @@ export default function Home() {
   const [plan, setPlan] = useState<PlanState>(defaultPlan);
   const [account, setAccount] = useState<{ name: string; role: "OWNER" | "KASIR" }>({ name: "Owner", role: "OWNER" });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [modal, setModal] = useState<"product" | "material" | "payment" | "expense" | "production" | "purchase" | "capital" | "party" | "receipt" | null>(null);
+  const [modal, setModal] = useState<"product" | "material" | "payment" | "expense" | "production" | "purchase" | "capital" | "party" | "receipt" | "b2b-order" | "b2b-delivery" | "b2b-invoice" | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [lastSale, setLastSale] = useState<{ id: string; total: number; method: PaymentMethod; paid: number; change: number; items: CartItem[] } | null>(null);
   const [dark, setDark] = useState(false);
+  const [b2bOrders, setB2bOrders] = useState<SalesOrder[]>([]);
+  const [b2bDeliveries, setB2bDeliveries] = useState<DeliveryOrder[]>([]);
+  const [b2bInvoices, setB2bInvoices] = useState<Invoice[]>([]);
+  const [b2bAging, setB2bAging] = useState<AgingRow[]>([]);
+  const [b2bSelectedSO, setB2bSelectedSO] = useState<SalesOrder | null>(null);
 
   useEffect(() => {
     if (BACKEND_ENABLED) {
@@ -253,6 +265,38 @@ export default function Home() {
       const mapParty = (item: Record<string, unknown>): Party => ({ id: String(item.id), name: String(item.name), type: String(item.party_type) === "SUPPLIER" ? "SUPPLIER" : "CUSTOMER", phone: String(item.phone || ""), address: String(item.address || ""), creditLimit: Number(item.credit_limit || 0) });
       if (data.customers || data.suppliers) setParties([...(data.customers || []).map(mapParty), ...(data.suppliers || []).map(mapParty)]);
     }).catch(() => undefined);
+    // Fetch B2B data
+    backendRequest<unknown[]>("/api/b2b/sales-orders").then((rows) => {
+      setB2bOrders((rows as Record<string, unknown>[]).map((row) => {
+        const party = row.parties as { name?: string; phone?: string } | undefined;
+        const items = (row.sales_order_items as Array<Record<string, unknown>> || []).map((it) => {
+          const item = it.items as { name?: string; units?: { code?: string } } | undefined;
+          return { id: String(it.id), item_id: String(it.item_id), qty: Number(it.qty), unit_price: Number(it.unit_price), subtotal: Number(it.subtotal), item_name: item?.name || "", unit_code: item?.units?.code || "" };
+        });
+        return { id: String(row.id), customer_id: String(row.customer_id), customer_name: party?.name || "", customer_phone: party?.phone || "", order_date: String(row.order_date), status: String(row.status) as SalesOrder["status"], payment_terms_days: Number(row.payment_terms_days), total_amount: Number(row.total_amount), notes: String(row.notes || ""), items };
+      }));
+    }).catch(() => undefined);
+    backendRequest<unknown[]>("/api/b2b/delivery-orders").then((rows) => {
+      setB2bDeliveries((rows as Record<string, unknown>[]).map((row) => {
+        const so = row.sales_orders as { order_date?: string; parties?: { name?: string } } | undefined;
+        const items = (row.delivery_order_items as Array<Record<string, unknown>> || []).map((it) => {
+          const item = it.items as { name?: string; units?: { code?: string } } | undefined;
+          return { id: String(it.id), item_id: String(it.item_id), qty: Number(it.qty), item_name: item?.name || "", unit_code: item?.units?.code || "" };
+        });
+        return { id: String(row.id), sales_order_id: String(row.sales_order_id), customer_name: so?.parties?.name || "", so_date: so?.order_date || "", delivery_date: String(row.delivery_date), status: String(row.status) as DeliveryOrder["status"], notes: String(row.notes || ""), driver_name: String(row.driver_name || ""), items };
+      }));
+    }).catch(() => undefined);
+    backendRequest<unknown[]>("/api/b2b/invoices").then((rows) => {
+      setB2bInvoices((rows as Record<string, unknown>[]).map((row) => {
+        const so = row.sales_orders as { order_date?: string; parties?: { name?: string; phone?: string } } | undefined;
+        return { id: String(row.id), sales_order_id: String(row.sales_order_id), delivery_order_id: row.delivery_order_id ? String(row.delivery_order_id) : undefined, invoice_number: String(row.invoice_number), invoice_date: String(row.invoice_date), due_date: String(row.due_date), total_amount: Number(row.total_amount), paid_amount: Number(row.paid_amount), status: String(row.status) as Invoice["status"], notes: String(row.notes || ""), customer_name: so?.parties?.name || "" };
+      }));
+    }).catch(() => undefined);
+    backendRequest<unknown[]>("/api/b2b/aging").then((rows) => {
+      setB2bAging((rows as Record<string, unknown>[]).map((row) => ({
+        invoice_id: String(row.invoice_id), invoice_number: String(row.invoice_number), customer_name: String(row.customer_name), invoice_date: String(row.invoice_date), due_date: String(row.due_date), total_amount: Number(row.total_amount), paid_amount: Number(row.paid_amount), outstanding: Number(row.outstanding), days_overdue: Number(row.days_overdue), age_bucket: String(row.age_bucket),
+      })));
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -301,7 +345,7 @@ export default function Home() {
     setCart((current) => current.flatMap((item) => item.id === id ? (item.qty + delta <= 0 ? [] : [{ ...item, qty: item.qty + delta }]) : [item]));
   };
 
-  const openCreate = (kind: "product" | "material" | "expense" | "production" | "purchase" | "capital" | "party") => setModal(kind);
+  const openCreate = (kind: "product" | "material" | "expense" | "production" | "purchase" | "capital" | "party" | "b2b-order" | "b2b-delivery" | "b2b-invoice") => setModal(kind);
 
   const saveBusinessProfile = async (profile: BusinessProfile) => {
     if (BACKEND_ENABLED) {
@@ -484,6 +528,104 @@ export default function Home() {
     notify(`Pembayaran ${rupiah(amount)} diterima.`);
   };
 
+  const saveB2BOrder = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const customerId = String(form.get("customer") || "");
+    const terms = Number(form.get("paymentTerms") || 30);
+    const notes = String(form.get("notes") || "");
+    const itemIds = form.getAll("itemId").map(String);
+    const itemQtys = form.getAll("itemQty").map(Number);
+    const itemPrices = form.getAll("itemPrice").map(Number);
+    if (!customerId) return notify("Pilih pelanggan.", "error");
+    const items = itemIds.map((id, i) => ({ item_id: id, qty: itemQtys[i], unit_price: itemPrices[i] })).filter((it) => it.item_id && it.qty > 0);
+    if (!items.length) return notify("Tambah minimal satu item.", "error");
+    if (BACKEND_ENABLED) {
+      try {
+        const result = await backendRequest<{ id?: string }>("/api/b2b/sales-orders", { method: "POST", body: JSON.stringify({ customer_id: customerId, payment_terms_days: terms, notes, items }) });
+        const soId = result?.id || `so-${Date.now()}`;
+        const customer = parties.find((p) => p.id === customerId);
+        const newOrder: SalesOrder = { id: soId, customer_id: customerId, customer_name: customer?.name || "", customer_phone: customer?.phone || "", order_date: new Date().toISOString().slice(0, 10), status: "DRAFT", payment_terms_days: terms, total_amount: items.reduce((s, it) => s + it.qty * it.unit_price, 0), notes, items: items.map((it, i) => ({ id: `soi-${Date.now()}-${i}`, ...it, subtotal: it.qty * it.unit_price, item_name: products.find((p) => p.id === it.item_id)?.name || "" })) };
+        setB2bOrders((prev) => [newOrder, ...prev]);
+      } catch (error) { return notify(error instanceof Error ? error.message : "Gagal membuat sales order.", "error"); }
+    }
+    setModal(null);
+    notify("Sales order berhasil dibuat.");
+  };
+
+  const confirmB2BOrder = async (id: string) => {
+    if (BACKEND_ENABLED) {
+      try { await backendRequest(`/api/b2b/sales-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status: "CONFIRMED" }) }); }
+      catch (error) { return notify(error instanceof Error ? error.message : "Gagal konfirmasi SO.", "error"); }
+    }
+    setB2bOrders((prev) => prev.map((so) => so.id === id ? { ...so, status: "CONFIRMED" } : so));
+    notify("Sales order dikonfirmasi.");
+  };
+
+  const createB2BDelivery = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const soId = String(form.get("salesOrderId") || "");
+    const driverName = String(form.get("driverName") || "");
+    const notes = String(form.get("notes") || "");
+    if (!soId) return notify("Pilih sales order.", "error");
+    if (BACKEND_ENABLED) {
+      try {
+        const result = await backendRequest<{ id?: string }>("/api/b2b/delivery-orders", { method: "POST", body: JSON.stringify({ sales_order_id: soId, driver_name: driverName, notes }) });
+        const so = b2bOrders.find((o) => o.id === soId);
+        const newDO: DeliveryOrder = { id: result?.id || `do-${Date.now()}`, sales_order_id: soId, customer_name: so?.customer_name, so_date: so?.order_date, delivery_date: new Date().toISOString().slice(0, 10), status: "PENDING", notes, driver_name: driverName, items: so?.items.map((it) => ({ id: `doi-${Date.now()}`, item_id: it.item_id, qty: it.qty, item_name: it.item_name, unit_code: it.unit_code })) || [] };
+        setB2bDeliveries((prev) => [newDO, ...prev]);
+      } catch (error) { return notify(error instanceof Error ? error.message : "Gagal membuat surat jalan.", "error"); }
+    }
+    setModal(null);
+    notify("Surat jalan berhasil dibuat.");
+  };
+
+  const deliverB2BOrder = async (doId: string, soId: string) => {
+    if (BACKEND_ENABLED) {
+      try { await backendRequest(`/api/b2b/sales-orders/${soId}`, { method: "PATCH", body: JSON.stringify({ status: "DELIVERED" }) }); }
+      catch (error) { return notify(error instanceof Error ? error.message : "Gagal update status.", "error"); }
+    }
+    setB2bDeliveries((prev) => prev.map((d) => d.id === doId ? { ...d, status: "DELIVERED" } : d));
+    setB2bOrders((prev) => prev.map((so) => so.id === soId ? { ...so, status: "DELIVERED" } : so));
+    notify("Pengiriman dikonfirmasi.");
+  };
+
+  const createB2BInvoice = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const soId = String(form.get("salesOrderId") || "");
+    if (!soId) return notify("Pilih sales order.", "error");
+    if (BACKEND_ENABLED) {
+      try {
+        const result = await backendRequest<{ id?: string; invoice_number?: string; due_date?: string; total_amount?: number }>("/api/b2b/invoices", { method: "POST", body: JSON.stringify({ sales_order_id: soId }) });
+        const so = b2bOrders.find((o) => o.id === soId);
+        const newInv: Invoice = { id: result?.id || `inv-${Date.now()}`, sales_order_id: soId, invoice_number: result?.invoice_number || "", invoice_date: new Date().toISOString().slice(0, 10), due_date: result?.due_date || "", total_amount: result?.total_amount || so?.total_amount || 0, paid_amount: 0, status: "UNPAID", notes: "", customer_name: so?.customer_name };
+        setB2bInvoices((prev) => [newInv, ...prev]);
+        setB2bOrders((prev) => prev.map((o) => o.id === soId ? { ...o, status: "INVOICED" } : o));
+      } catch (error) { return notify(error instanceof Error ? error.message : "Gagal membuat invoice.", "error"); }
+    }
+    setModal(null);
+    notify("Invoice berhasil dibuat.");
+  };
+
+  const payB2BInvoice = async (invoiceId: string) => {
+    const invoice = b2bInvoices.find((inv) => inv.id === invoiceId);
+    if (!invoice) return;
+    const remaining = invoice.total_amount - invoice.paid_amount;
+    const value = window.prompt(`Masukkan pembayaran (maks. ${rupiah(remaining)})`, String(remaining));
+    const amount = Number(value);
+    if (!amount || amount <= 0 || amount > remaining) return notify("Nominal pembayaran tidak valid.", "error");
+    if (BACKEND_ENABLED) {
+      try { await backendRequest(`/api/b2b/invoices/${invoiceId}/pay`, { method: "POST", body: JSON.stringify({ amount, payment_method: "TUNAI" }) }); }
+      catch (error) { return notify(error instanceof Error ? error.message : "Pembayaran invoice gagal.", "error"); }
+    }
+    const newPaid = invoice.paid_amount + amount;
+    const newStatus = newPaid >= invoice.total_amount ? "PAID" as const : "PARTIAL" as const;
+    setB2bInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, paid_amount: newPaid, status: newStatus } : inv));
+    notify(`Pembayaran ${rupiah(amount)} dicatat.`);
+  };
+
   const exportReport = async () => {
     try {
       if (BACKEND_ENABLED) {
@@ -582,7 +724,11 @@ export default function Home() {
         {view === "receivables" && <ReceivableView receivables={receivables} onPay={payReceivable} />}
         {view === "expenses" && <ExpenseView expenses={expenses} onAdd={() => openCreate("expense")} />}
          {view === "reports" && <ReportView2 expenses={expenses} capitalEntries={capitalEntries} purchases={purchases} receivables={receivables} products={products} sales={sales} exportReport={exportReport} onAddCapital={() => openCreate("capital")} />}
-        {view === "guide" && <GuideView role={account.role} />}
+         {view === "b2b-orders" && <B2BOrderView orders={b2bOrders} onAdd={() => openCreate("b2b-order")} onConfirm={confirmB2BOrder} />}
+         {view === "b2b-deliveries" && <B2BDeliveryView deliveries={b2bDeliveries} orders={b2bOrders} onAdd={() => openCreate("b2b-delivery")} onDeliver={deliverB2BOrder} />}
+         {view === "b2b-invoices" && <B2BInvoiceView invoices={b2bInvoices} orders={b2bOrders} onAdd={() => openCreate("b2b-invoice")} onPay={payB2BInvoice} />}
+         {view === "b2b-aging" && <B2BAgingView aging={b2bAging} />}
+         {view === "guide" && <GuideView role={account.role} />}
         {view === "settings" && <SettingsView dark={dark} setDark={setDark} notify={notify} onReset={resetAllData} onSeed={fillDummyData} businessProfile={businessProfile} onSaveProfile={saveBusinessProfile} />}
         <BottomNav view={view} navigate={navigate} role={account.role} />
       </div>
@@ -595,6 +741,9 @@ export default function Home() {
       {modal === "party" && <PartyModal onClose={() => setModal(null)} onSave={saveParty} />}
       {modal === "payment" && <PaymentModal total={cartTotal} customers={parties.filter((item) => item.type === "CUSTOMER").map((item) => item.name)} onCreateCustomer={(name) => createParty(name, "CUSTOMER")} onClose={() => setModal(null)} onPay={handlePayment} />}
       {modal === "receipt" && lastSale && <ReceiptModal sale={lastSale} onClose={() => setModal(null)} onPrint={() => notify("Struk dikirim ke printer. Jika gagal, bagikan struk digital.", "default")} />}
+      {modal === "b2b-order" && <B2BOrderModal customers={parties.filter((p) => p.type === "CUSTOMER")} products={products} onClose={() => setModal(null)} onSave={saveB2BOrder} />}
+      {modal === "b2b-delivery" && <B2BDeliveryModal orders={b2bOrders.filter((so) => so.status === "CONFIRMED")} onClose={() => setModal(null)} onSave={createB2BDelivery} />}
+      {modal === "b2b-invoice" && <B2BInvoiceModal orders={b2bOrders.filter((so) => so.status === "DELIVERED")} onClose={() => setModal(null)} onSave={createB2BInvoice} />}
       {toast && <div className={`toast ${toast.tone}`} role="status"><Check size={16} />{toast.message}</div>}
     </div>
   );
@@ -912,6 +1061,159 @@ function CashierModal({ cashiers, onClose, onSaved }: { cashiers: Array<{ id: st
       )}
     </Modal>
   );
+}
+function B2BOrderView({ orders, onAdd, onConfirm }: { orders: SalesOrder[]; onAdd: () => void; onConfirm: (id: string) => void }) {
+  const statusBadge = (status: SalesOrder["status"]) => {
+    const map: Record<string, string> = { DRAFT: "badge-blue", CONFIRMED: "badge-green", DELIVERED: "badge-green", INVOICED: "badge-purple", CANCELLED: "badge-red" };
+    return <span className={`badge ${map[status] || "badge-blue"}`}>{status}</span>;
+  };
+  return <main className="page">
+    <PageHeading eyebrow="B2B" title="Sales Order" description="Kelola pesanan penjualan B2B dengan syarat pembayaran tertunda." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Buat Sales Order</button>} />
+    <div className="page-card-grid">
+      <div className="mini-stat"><span className="mini-stat-label">Total SO</span><p className="mini-stat-value">{orders.length}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Draft</span><p className="mini-stat-value">{orders.filter((o) => o.status === "DRAFT").length}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Total nilai</span><p className="mini-stat-value">{shortRupiah(orders.reduce((s, o) => s + o.total_amount, 0))}</p></div>
+    </div>
+    <section className="card table-wrap" style={{ marginTop: 18 }}>
+      <table><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Termin</th><th>Total</th><th>Status</th><th></th></tr></thead>
+      <tbody>{orders.map((so) => <tr key={so.id}>
+        <td className="table-muted">{dateLabel(so.order_date)}</td>
+        <td className="table-primary">{so.customer_name}</td>
+        <td>NET {so.payment_terms_days}</td>
+        <td className="table-primary">{rupiah(so.total_amount)}</td>
+        <td>{statusBadge(so.status)}</td>
+        <td>{so.status === "DRAFT" && <button className="button button-primary" style={{ minHeight: 34, padding: "0 11px", fontSize: 11 }} onClick={() => onConfirm(so.id)}>Konfirmasi</button>}</td>
+      </tr>)}{!orders.length && <tr><td colSpan={6} className="table-muted" style={{ textAlign: "center", padding: 24 }}>Belum ada sales order.</td></tr>}</tbody></table>
+    </section>
+  </main>;
+}
+function B2BOrderModal({ customers, products, onClose, onSave }: { customers: Party[]; products: Product[]; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [rows, setRows] = useState([0]);
+  return <Modal large title="Buat Sales Order" description="Pilih pelanggan, tambahkan produk, dan atur termin pembayaran." onClose={onClose}>
+    <form onSubmit={onSave}>
+      <div className="form-grid">
+        <div className="field full"><label>Pelanggan *</label><select className="select" name="customer" defaultValue=""><option value="" disabled>Pilih pelanggan</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        <div className="field"><label>Termin pembayaran</label><select className="select" name="paymentTerms"><option value={30}>NET 30</option><option value={60}>NET 60</option><option value={90}>NET 90</option></select></div>
+        <div className="field"><label>Catatan</label><input className="input" name="notes" placeholder="Catatan SO" /></div>
+      </div>
+      <div className="section-header" style={{ marginTop: 18 }}><h2>Item pesanan</h2><button type="button" className="button button-secondary" onClick={() => setRows((c) => [...c, c.length])}><Plus size={15} />Tambah item</button></div>
+      {rows.map((row, i) => <div className="form-grid" key={row} style={{ marginTop: 8 }}>
+        <div className="field"><label>{i === 0 ? "Produk *" : `Produk ${i + 1}`}</label><select className="select" name="itemId" defaultValue=""><option value="" disabled>Pilih produk</option>{products.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+        <div className="field"><label>Qty *</label><input className="input" name="itemQty" type="number" min="1" step="0.01" placeholder="0" /></div>
+        <div className="field"><label>Harga/unit *</label><input className="input" name="itemPrice" type="number" min="0" placeholder="0" /></div>
+        {rows.length > 1 && <button type="button" className="button button-ghost" onClick={() => setRows((c) => c.filter((v) => v !== row))} style={{ alignSelf: "end" }}><Trash2 size={16} /></button>}
+      </div>)}
+      <ModalFooter onClose={onClose} submitLabel="Simpan Sales Order" />
+    </form>
+  </Modal>;
+}
+function B2BDeliveryView({ deliveries, orders, onAdd, onDeliver }: { deliveries: DeliveryOrder[]; orders: SalesOrder[]; onAdd: () => void; onDeliver: (doId: string, soId: string) => void }) {
+  const confirmedOrders = orders.filter((so) => so.status === "CONFIRMED");
+  return <main className="page">
+    <PageHeading eyebrow="B2B" title="Surat Jalan" description="Buat dan kelola surat jalan untuk pengiriman pesanan B2B." action={<button className="button button-primary" onClick={onAdd} disabled={!confirmedOrders.length}><Plus size={17} />Buat Surat Jalan</button>} />
+    <div className="page-card-grid">
+      <div className="mini-stat"><span className="mini-stat-label">Total DO</span><p className="mini-stat-value">{deliveries.length}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Pending</span><p className="mini-stat-value">{deliveries.filter((d) => d.status === "PENDING").length}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Terkirim</span><p className="mini-stat-value">{deliveries.filter((d) => d.status === "DELIVERED").length}</p></div>
+    </div>
+    <section className="card table-wrap" style={{ marginTop: 18 }}>
+      <table><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>SO</th><th>Supir</th><th>Status</th><th></th></tr></thead>
+      <tbody>{deliveries.map((d) => <tr key={d.id}>
+        <td className="table-muted">{dateLabel(d.delivery_date)}</td>
+        <td className="table-primary">{d.customer_name || "-"}</td>
+        <td style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{d.sales_order_id.slice(0, 8)}</td>
+        <td>{d.driver_name || <span className="table-muted">-</span>}</td>
+        <td><span className={`badge ${d.status === "DELIVERED" ? "badge-green" : "badge-amber"}`}>{d.status === "DELIVERED" ? "Terkirim" : "Pending"}</span></td>
+        <td>{d.status === "PENDING" && <button className="button button-primary" style={{ minHeight: 34, padding: "0 11px", fontSize: 11 }} onClick={() => onDeliver(d.id, d.sales_order_id)}>Konfirmasi Kirim</button>}</td>
+      </tr>)}{!deliveries.length && <tr><td colSpan={6} className="table-muted" style={{ textAlign: "center", padding: 24 }}>Belum ada surat jalan.</td></tr>}</tbody></table>
+    </section>
+  </main>;
+}
+function B2BDeliveryModal({ orders, onClose, onSave }: { orders: SalesOrder[]; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  return <Modal title="Buat Surat Jalan" description="Pilih sales order yang sudah dikonfirmasi untuk dikirim." onClose={onClose}>
+    <form onSubmit={onSave}>
+      <div className="form-grid">
+        <div className="field full"><label>Sales Order *</label><select className="select" name="salesOrderId" defaultValue=""><option value="" disabled>Pilih SO</option>{orders.map((so) => <option key={so.id} value={so.id}>{so.customer_name} — {rupiah(so.total_amount)} ({dateLabel(so.order_date)})</option>)}</select></div>
+        <div className="field"><label>Nama supir</label><input className="input" name="driverName" placeholder="Nama supir" /></div>
+        <div className="field"><label>Catatan</label><input className="input" name="notes" placeholder="Catatan pengiriman" /></div>
+      </div>
+      <ModalFooter onClose={onClose} submitLabel="Buat Surat Jalan" />
+    </form>
+  </Modal>;
+}
+function B2BInvoiceView({ invoices, orders, onAdd, onPay }: { invoices: Invoice[]; orders: SalesOrder[]; onAdd: () => void; onPay: (id: string) => void }) {
+  const deliveredOrders = orders.filter((so) => so.status === "DELIVERED");
+  const statusBadge = (status: Invoice["status"]) => {
+    const map: Record<string, string> = { UNPAID: "badge-red", PARTIAL: "badge-amber", PAID: "badge-green", OVERDUE: "badge-red" };
+    return <span className={`badge ${map[status] || "badge-red"}`}>{status === "PAID" ? "Lunas" : status === "PARTIAL" ? "Sebagian" : status === "OVERDUE" ? "Jatuh tempo" : "Belum bayar"}</span>;
+  };
+  const outstanding = invoices.reduce((s, inv) => s + Math.max(0, inv.total_amount - inv.paid_amount), 0);
+  return <main className="page">
+    <PageHeading eyebrow="B2B" title="Invoice" description="Buat invoice dari sales order dan catat pembayaran pelanggan." action={<button className="button button-primary" onClick={onAdd} disabled={!deliveredOrders.length}><Plus size={17} />Buat Invoice</button>} />
+    <div className="page-card-grid">
+      <div className="mini-stat"><span className="mini-stat-label">Total invoice</span><p className="mini-stat-value">{invoices.length}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Outstanding</span><p className="mini-stat-value negative">{shortRupiah(outstanding)}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Lunas</span><p className="mini-stat-value">{invoices.filter((inv) => inv.status === "PAID").length}</p></div>
+    </div>
+    <section className="card table-wrap" style={{ marginTop: 18 }}>
+      <table><thead><tr><th>No. Invoice</th><th>Pelanggan</th><th>Tanggal</th><th>Jatuh tempo</th><th>Total</th><th>Dibayar</th><th>Status</th><th></th></tr></thead>
+      <tbody>{invoices.map((inv) => <tr key={inv.id}>
+        <td className="table-primary" style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{inv.invoice_number}</td>
+        <td>{inv.customer_name || "-"}</td>
+        <td className="table-muted">{dateLabel(inv.invoice_date)}</td>
+        <td className={inv.status !== "PAID" ? "negative" : "table-muted"}>{dateLabel(inv.due_date)}</td>
+        <td className="table-primary">{rupiah(inv.total_amount)}</td>
+        <td>{rupiah(inv.paid_amount)}</td>
+        <td>{statusBadge(inv.status)}</td>
+        <td>{inv.status !== "PAID" && <button className="button button-primary" style={{ minHeight: 34, padding: "0 11px", fontSize: 11 }} onClick={() => onPay(inv.id)}>Bayar</button>}</td>
+      </tr>)}{!invoices.length && <tr><td colSpan={8} className="table-muted" style={{ textAlign: "center", padding: 24 }}>Belum ada invoice.</td></tr>}</tbody></table>
+    </section>
+  </main>;
+}
+function B2BInvoiceModal({ orders, onClose, onSave }: { orders: SalesOrder[]; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  return <Modal title="Buat Invoice" description="Pilih sales order yang sudah dikirim untuk dibuatkan invoice." onClose={onClose}>
+    <form onSubmit={onSave}>
+      <div className="form-grid">
+        <div className="field full"><label>Sales Order *</label><select className="select" name="salesOrderId" defaultValue=""><option value="" disabled>Pilih SO</option>{orders.map((so) => <option key={so.id} value={so.id}>{so.customer_name} — {rupiah(so.total_amount)} (NET {so.payment_terms_days})</option>)}</select></div>
+      </div>
+      <ModalFooter onClose={onClose} submitLabel="Buat Invoice" />
+    </form>
+  </Modal>;
+}
+function B2BAgingView({ aging }: { aging: AgingRow[] }) {
+  const buckets = [
+    { label: "0-30 hari", key: "0-30", color: "badge-blue" },
+    { label: "31-60 hari", key: "31-60", color: "badge-amber" },
+    { label: "61-90 hari", key: "61-90", color: "badge-red" },
+    { label: ">90 hari", key: ">90", color: "badge-red" },
+  ];
+  const totalOutstanding = aging.reduce((s, r) => s + r.outstanding, 0);
+  return <main className="page">
+    <PageHeading eyebrow="B2B" title="Aging Piutang" description="Pantau piutang B2B berdasarkan umur tagihan." />
+    <div className="page-card-grid">
+      <div className="mini-stat"><span className="mini-stat-label">Total outstanding</span><p className="mini-stat-value negative">{rupiah(totalOutstanding)}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Invoice belum lunas</span><p className="mini-stat-value">{aging.length}</p></div>
+    </div>
+    <div className="kpi-grid" style={{ marginTop: 18 }}>
+      {buckets.map((b) => {
+        const bucketTotal = aging.filter((r) => r.age_bucket === b.key).reduce((s, r) => s + r.outstanding, 0);
+        return <Kpi key={b.key} label={b.label} value={rupiah(bucketTotal)} foot={<span>{aging.filter((r) => r.age_bucket === b.key).length} invoice</span>} icon={<Clock3 size={16} />} />;
+      })}
+    </div>
+    <section className="card table-wrap" style={{ marginTop: 18 }}>
+      <table><thead><tr><th>Invoice</th><th>Pelanggan</th><th>Tanggal</th><th>Jatuh tempo</th><th>Total</th><th>Dibayar</th><th>Outstanding</th><th>Umur</th></tr></thead>
+      <tbody>{aging.map((row) => <tr key={row.invoice_id}>
+        <td className="table-primary" style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}>{row.invoice_number}</td>
+        <td>{row.customer_name}</td>
+        <td className="table-muted">{dateLabel(row.invoice_date)}</td>
+        <td className="negative">{dateLabel(row.due_date)}</td>
+        <td>{rupiah(row.total_amount)}</td>
+        <td>{rupiah(row.paid_amount)}</td>
+        <td className="table-primary negative">{rupiah(row.outstanding)}</td>
+        <td><span className={`badge ${row.days_overdue > 60 ? "badge-red" : row.days_overdue > 30 ? "badge-amber" : "badge-blue"}`}>{row.days_overdue} hari</span></td>
+      </tr>)}{!aging.length && <tr><td colSpan={8} className="table-muted" style={{ textAlign: "center", padding: 24 }}>Tidak ada piutang outstanding.</td></tr>}</tbody></table>
+    </section>
+  </main>;
 }
 function GuideView({ role }: { role: "OWNER" | "KASIR" }) {
   const [tab, setTab] = useState<"panduan" | "studi">("panduan");
