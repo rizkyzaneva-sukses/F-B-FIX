@@ -23,6 +23,7 @@ export async function GET() {
       capitalEntries,
       sales,
       saleItems,
+      productionOutputs,
     ] = await Promise.all([
       postgrestJson<Array<Record<string, unknown>>>(
         `/businesses?select=*&id=eq.${auth.session.business_id}`,
@@ -70,6 +71,11 @@ export async function GET() {
         auth.token
       ),
       postgrestJson(
+        `/production_outputs?select=*,items(name)&limit=${MAX_ROWS}`,
+        {},
+        auth.token
+      ),
+      postgrestJson(
         `/payables?select=*,parties(name)&order=updated_at.desc&limit=${MAX_ROWS}`,
         {},
         auth.token
@@ -101,6 +107,7 @@ export async function GET() {
       expenses,
       purchases,
       batches,
+      batchOutputs: productionOutputs,
       payables,
       capitalEntries,
       sales,
