@@ -6,7 +6,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const auth = await requireOwner(); if ("error" in auth) return auth.error;
   try {
     const { id } = await context.params;
-    const body = await request.json() as { amount?: number; payment_method?: string; notes?: string };
+    const body = await request.json() as { amount?: number; payment_method?: string; notes?: string; payment_proof_url?: string };
     if (!body.amount || body.amount <= 0) return apiError("Nominal pembayaran harus lebih dari 0.", 422, "VALIDATION_ERROR");
     const result = await postgrestJson("/rpc/pay_invoice", {
       method: "POST",
@@ -15,6 +15,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         p_amount: body.amount,
         p_method: body.payment_method || "TUNAI",
         p_notes: body.notes || "",
+        p_payment_proof_url: body.payment_proof_url || null,
       }),
     }, auth.token);
     return apiData(result);

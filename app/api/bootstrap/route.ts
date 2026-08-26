@@ -24,6 +24,8 @@ export async function GET() {
       sales,
       saleItems,
       productionOutputs,
+      supplierReturns,
+      cashReconciliations,
     ] = await Promise.all([
       postgrestJson<Array<Record<string, unknown>>>(
         `/businesses?select=*&id=eq.${auth.session.business_id}`,
@@ -95,6 +97,16 @@ export async function GET() {
         {},
         auth.token
       ),
+      postgrestJson(
+        `/supplier_returns?select=*,parties(name)&order=return_date.desc&limit=${MAX_ROWS}`,
+        {},
+        auth.token
+      ),
+      postgrestJson(
+        `/cash_reconciliations?select=*&order=reconciliation_date.desc&limit=${MAX_ROWS}`,
+        {},
+        auth.token
+      ),
     ]);
 
     return apiData({
@@ -112,6 +124,8 @@ export async function GET() {
       capitalEntries,
       sales,
       saleItems,
+      supplierReturns,
+      cashReconciliations,
     });
   } catch (error) {
     return apiError(

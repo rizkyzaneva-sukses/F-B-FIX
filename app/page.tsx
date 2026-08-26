@@ -50,6 +50,7 @@ import { backendRequest } from "@/lib/client-api";
 
 type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings" | "guide" | "b2b-orders" | "b2b-deliveries" | "b2b-invoices" | "b2b-aging" | "cash-recon";
 type PaymentMethod = "TUNAI" | "QRIS" | "TRANSFER" | "HUTANG";
+type SettlementPaymentMethod = Exclude<PaymentMethod, "HUTANG">;
 type Product = { id: string; name: string; category: string; stock: number; unit: string; price: number; cogs: number; emoji: string; active: boolean };
 type Material = { id: string; name: string; stock: number; unit: string; lastBuy: number; supplier: string; active: boolean };
 type CartItem = Product & { qty: number };
@@ -70,6 +71,7 @@ type InvoicePayment = { id: string; invoice_id: string; payment_date: string; am
 type AgingRow = { invoice_id: string; invoice_number: string; customer_name: string; invoice_date: string; due_date: string; total_amount: number; paid_amount: number; outstanding: number; days_overdue: number; age_bucket: string };
 type SupplierReturn = { id: string; purchaseId: string; supplier: string; date: string; reason: string; total: number; notes: string };
 type CashRecon = { id: string; date: string; systemCash: number; physicalCash: number; difference: number; notes: string; status: "open" | "verified" | "disputed" };
+type PartialPaymentTarget = { kind: "receivable" | "payable" | "invoice"; id: string; title: string; remaining: number };
 
 const demoProducts: Product[] = [
   { id: "p1", name: "Sambal Bawang 150g", category: "Sambal", stock: 42, unit: "jar", price: 28000, cogs: 13200, emoji: "SB", active: true },
@@ -200,6 +202,7 @@ export default function Home() {
   const [b2bAging, setB2bAging] = useState<AgingRow[]>([]);
   const [b2bSelectedSO, setB2bSelectedSO] = useState<SalesOrder | null>(null);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const [partialPayment, setPartialPayment] = useState<PartialPaymentTarget | null>(null);
 
   useEffect(() => {
     if (BACKEND_ENABLED) {
@@ -244,7 +247,7 @@ export default function Home() {
       setPlan({ name: data.currentPlan === "PRO" ? "PRO" : "FREE", salesLimit: data.limits.salesLimit, productLimit: data.limits.productLimit, materialLimit: data.limits.materialLimit });
     }).catch(() => undefined);
     // Fetch bootstrap data
-    backendRequest<{ business?: Record<string, unknown>; customers?: Array<Record<string, unknown>>; suppliers?: Array<Record<string, unknown>>; products?: Array<Record<string, unknown>>; materials?: Array<Record<string, unknown>>; receivables?: Array<Record<string, unknown>>; expenses?: Array<Record<string, unknown>>; purchases?: Array<Record<string, unknown>>; batches?: Array<Record<string, unknown>>; batchOutputs?: Array<Record<string, unknown>>; payables?: Array<Record<string, unknown>>; capitalEntries?: Array<Record<string, unknown>>; sales?: Array<Record<string, unknown>>; saleItems?: Array<Record<string, unknown>> }>("/api/bootstrap").then((data) => {
+    backendRequest<{ business?: Record<string, unknown>; customers?: Array<Record<string, unknown>>; suppliers?: Array<Record<string, unknown>>; products?: Array<Record<string, unknown>>; materials?: Array<Record<string, unknown>>; receivables?: Array<Record<string, unknown>>; expenses?: Array<Record<string, unknown>>; purchases?: Array<Record<string, unknown>>; batches?: Array<Record<string, unknown>>; batchOutputs?: Array<Record<string, unknown>>; payables?: Array<Record<string, unknown>>; capitalEntries?: Array<Record<string, unknown>>; sales?: Array<Record<string, unknown>>; saleItems?: Array<Record<string, unknown>>; supplierReturns?: Array<Record<string, unknown>>; cashReconciliations?: Array<Record<string, unknown>> }>("/api/bootstrap").then((data) => {
       if (data.business?.name) setBusinessName(String(data.business.name));
       if (data.business) setBusinessProfile({ name: String(data.business.name || ""), phone: String(data.business.phone || ""), address: String(data.business.address || ""), receipt_footer: String(data.business.receipt_footer || ""), paper_width: Number(data.business.paper_width) === 80 ? 80 : 58 });
       if (data.products) setProducts(data.products.map((item) => ({ id: String(item.id), name: String(item.name), category: String(item.category || "Lainnya"), stock: Number(item.stock_qty || 0), unit: String((item.units as { code?: string } | undefined)?.code || "pcs"), price: Number(item.sale_price || 0), cogs: Number(item.last_cogs || 0), emoji: initials(String(item.name)), active: Boolean(item.is_active) })));
@@ -272,6 +275,8 @@ export default function Home() {
       if (data.sales) setSales(data.sales.map((item) => ({ id: String(item.id), date: String(item.occurred_at || "").slice(0, 10), total: Number(item.total || 0), cogs: 0 })));
       const mapParty = (item: Record<string, unknown>): Party => ({ id: String(item.id), name: String(item.name), type: String(item.party_type) === "SUPPLIER" ? "SUPPLIER" : "CUSTOMER", phone: String(item.phone || ""), address: String(item.address || ""), creditLimit: Number(item.credit_limit || 0) });
       if (data.customers || data.suppliers) setParties([...(data.customers || []).map(mapParty), ...(data.suppliers || []).map(mapParty)]);
+      if (data.supplierReturns) setSupplierReturns(data.supplierReturns.map((item) => ({ id: String(item.id), purchaseId: String(item.purchase_id), supplier: String((item.parties as { name?: string } | undefined)?.name || "Supplier"), date: String(item.return_date), reason: String(item.reason || ""), total: Number(item.total || 0), notes: String(item.notes || "") })));
+      if (data.cashReconciliations) setCashRecons(data.cashReconciliations.map((item) => ({ id: String(item.id), date: String(item.reconciliation_date), systemCash: Number(item.system_cash || 0), physicalCash: Number(item.physical_cash || 0), difference: Number(item.difference || 0), notes: String(item.notes || ""), status: String(item.status || "open") as CashRecon["status"] })));
     }).catch(() => undefined);
     // Fetch B2B data
     backendRequest<unknown[]>("/api/b2b/sales-orders").then((rows) => {
@@ -523,21 +528,70 @@ export default function Home() {
     setCapitalEntries((current) => [{ id: `c-${Date.now()}`, date, type, amount, notes: String(form.get("note") || "") }, ...current]); setModal(null); notify("Transaksi modal berhasil dicatat.");
   };
 
-  const payPayable = async (id: string) => { const payable = payables.find((item) => item.id === id); if (!payable || payable.remaining <= 0) return; const amount = Number(window.prompt(`Masukkan pembayaran (maks. ${rupiah(payable.remaining)})`, String(payable.remaining))); if (!amount || amount <= 0 || amount > payable.remaining) return notify("Nominal pembayaran tidak valid.", "error"); if (BACKEND_ENABLED) try { await backendRequest(`/api/payables/${id}/pay`, { method: "POST", body: JSON.stringify({ amount, payment_method: "TUNAI" }) }); } catch (error) { return notify(error instanceof Error ? error.message : "Pembayaran utang gagal.", "error"); } setPayables((current) => current.map((item) => item.id === id ? { ...item, paid: item.paid + amount, remaining: item.remaining - amount, status: item.remaining - amount <= 0 ? "LUNAS" : "SEBAGIAN" } : item)); setPurchases((current) => current.map((item) => item.payableId === id ? { ...item, paid: item.paid + amount, remaining: item.remaining - amount, status: item.remaining - amount <= 0 ? "LUNAS" : "SEBAGIAN" } : item)); notify(`Pembayaran ${rupiah(amount)} dicatat.`); };
+  const openPayablePayment = (id: string) => {
+    const payable = payables.find((item) => item.id === id);
+    if (!payable || payable.remaining <= 0) return;
+    setPartialPayment({ kind: "payable", id, title: `Utang ${payable.supplier}`, remaining: payable.remaining });
+  };
 
-  const payReceivable = async (id: string) => {
+  const openReceivablePayment = (id: string) => {
     const receivable = receivables.find((item) => item.id === id);
     if (!receivable) return;
     const remaining = receivable.amount - receivable.paid;
-    const value = window.prompt(`Masukkan pembayaran (maks. ${rupiah(remaining)})`, String(remaining));
-    const amount = Number(value);
-    if (!amount || amount <= 0 || amount > remaining) return notify("Nominal pembayaran tidak valid.", "error");
-    if (BACKEND_ENABLED) {
-      try { await backendRequest(`/api/receivables/${id}/pay`, { method: "POST", body: JSON.stringify({ amount, payment_method: "TUNAI" }) }); }
-      catch (error) { return notify(error instanceof Error ? error.message : "Pembayaran piutang gagal.", "error"); }
+    if (remaining <= 0) return;
+    setPartialPayment({ kind: "receivable", id, title: `Piutang ${receivable.customer}`, remaining });
+  };
+
+  const uploadPaymentProof = async (file: File | null) => {
+    if (!file) return "";
+    if (!BACKEND_ENABLED) return "";
+    const formData = new FormData();
+    formData.append("file", file);
+    const result = await backendRequest<{ url: string }>("/api/upload/payment-proof", { method: "POST", body: formData });
+    return result.url;
+  };
+
+  const savePartialPayment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!partialPayment) return;
+
+    const form = new FormData(event.currentTarget);
+    const amount = Number(form.get("amount") || 0);
+    const paymentMethod = String(form.get("paymentMethod") || "TUNAI") as SettlementPaymentMethod;
+    const notes = String(form.get("notes") || "");
+    const file = form.get("proof") instanceof File && (form.get("proof") as File).size > 0 ? form.get("proof") as File : null;
+
+    if (!amount || amount <= 0 || amount > partialPayment.remaining) return notify("Nominal pembayaran tidak valid.", "error");
+
+    try {
+      const payment_proof_url = await uploadPaymentProof(file);
+      if (BACKEND_ENABLED) {
+        const endpoint = partialPayment.kind === "payable"
+          ? `/api/payables/${partialPayment.id}/pay`
+          : partialPayment.kind === "receivable"
+            ? `/api/receivables/${partialPayment.id}/pay`
+            : `/api/b2b/invoices/${partialPayment.id}/pay`;
+        await backendRequest(endpoint, { method: "POST", body: JSON.stringify({ amount, payment_method: paymentMethod, notes, payment_proof_url }) });
+      }
+    } catch (error) {
+      return notify(error instanceof Error ? error.message : "Pembayaran gagal disimpan.", "error");
     }
-    setReceivables((current) => current.map((item) => item.id === id ? { ...item, paid: item.paid + amount } : item));
-    notify(`Pembayaran ${rupiah(amount)} diterima.`);
+
+    if (partialPayment.kind === "payable") {
+      setPayables((current) => current.map((item) => item.id === partialPayment.id ? { ...item, paid: item.paid + amount, remaining: item.remaining - amount, status: item.remaining - amount <= 0 ? "LUNAS" : "SEBAGIAN" } : item));
+      setPurchases((current) => current.map((item) => item.payableId === partialPayment.id ? { ...item, paid: item.paid + amount, remaining: item.remaining - amount, status: item.remaining - amount <= 0 ? "LUNAS" : "SEBAGIAN" } : item));
+    } else if (partialPayment.kind === "receivable") {
+      setReceivables((current) => current.map((item) => item.id === partialPayment.id ? { ...item, paid: item.paid + amount } : item));
+    } else {
+      setB2bInvoices((prev) => prev.map((inv) => {
+        if (inv.id !== partialPayment.id) return inv;
+        const newPaid = inv.paid_amount + amount;
+        return { ...inv, paid_amount: newPaid, status: newPaid >= inv.total_amount ? "PAID" : "PARTIAL" };
+      }));
+    }
+
+    setPartialPayment(null);
+    notify(`Pembayaran ${rupiah(amount)} dicatat.`);
   };
 
   const sendWhatsApp = (phone: string, message: string) => {
