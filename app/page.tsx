@@ -48,7 +48,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import { backendRequest } from "@/lib/client-api";
 
-type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings" | "guide" | "b2b-orders" | "b2b-deliveries" | "b2b-invoices" | "b2b-aging";
+type View = "dashboard" | "pos" | "products" | "materials" | "production" | "purchases" | "parties" | "receivables" | "expenses" | "reports" | "settings" | "guide" | "b2b-orders" | "b2b-deliveries" | "b2b-invoices" | "b2b-aging" | "cash-recon";
 type PaymentMethod = "TUNAI" | "QRIS" | "TRANSFER" | "HUTANG";
 type Product = { id: string; name: string; category: string; stock: number; unit: string; price: number; cogs: number; emoji: string; active: boolean };
 type Material = { id: string; name: string; stock: number; unit: string; lastBuy: number; supplier: string; active: boolean };
@@ -68,6 +68,8 @@ type DeliveryOrder = { id: string; sales_order_id: string; customer_name?: strin
 type Invoice = { id: string; sales_order_id: string; delivery_order_id?: string; invoice_number: string; invoice_date: string; due_date: string; total_amount: number; paid_amount: number; status: "UNPAID" | "PARTIAL" | "PAID" | "OVERDUE"; notes: string; customer_name?: string; payments?: InvoicePayment[] };
 type InvoicePayment = { id: string; invoice_id: string; payment_date: string; amount: number; payment_method: string; notes: string };
 type AgingRow = { invoice_id: string; invoice_number: string; customer_name: string; invoice_date: string; due_date: string; total_amount: number; paid_amount: number; outstanding: number; days_overdue: number; age_bucket: string };
+type SupplierReturn = { id: string; purchaseId: string; supplier: string; date: string; reason: string; total: number; notes: string };
+type CashRecon = { id: string; date: string; systemCash: number; physicalCash: number; difference: number; notes: string; status: "open" | "verified" | "disputed" };
 
 const demoProducts: Product[] = [
   { id: "p1", name: "Sambal Bawang 150g", category: "Sambal", stock: 42, unit: "jar", price: 28000, cogs: 13200, emoji: "SB", active: true },
@@ -162,7 +164,7 @@ const navSections = [
   { label: "Workspace", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "pos", label: "Kasir POS", icon: ShoppingCart }] },
   { label: "B2B", items: [{ id: "b2b-orders", label: "Sales Order", icon: FileText }, { id: "b2b-deliveries", label: "Surat Jalan", icon: Truck }, { id: "b2b-invoices", label: "Invoice", icon: Receipt }, { id: "b2b-aging", label: "Aging Piutang", icon: Clock3 }] },
   { label: "Operasional", items: [{ id: "products", label: "Produk Jadi", icon: Package }, { id: "materials", label: "Bahan Baku", icon: Leaf }, { id: "production", label: "Produksi Batch", icon: Boxes }, { id: "purchases", label: "Pembelian", icon: Truck }, { id: "parties", label: "Pelanggan & Supplier", icon: Users }] },
-  { label: "Keuangan", items: [{ id: "receivables", label: "Piutang", icon: WalletCards }, { id: "expenses", label: "Pengeluaran", icon: CircleDollarSign }, { id: "reports", label: "Laporan", icon: BarChart3 }] },
+  { label: "Keuangan", items: [{ id: "receivables", label: "Piutang", icon: WalletCards }, { id: "expenses", label: "Pengeluaran", icon: CircleDollarSign }, { id: "cash-recon", label: "Rekonsiliasi Kas", icon: ClipboardList }, { id: "reports", label: "Laporan", icon: BarChart3 }] },
   { label: "Bantuan", items: [{ id: "guide", label: "Panduan", icon: BookOpen }] },
 ];
 
@@ -185,9 +187,12 @@ export default function Home() {
   const [plan, setPlan] = useState<PlanState>(defaultPlan);
   const [account, setAccount] = useState<{ name: string; role: "OWNER" | "KASIR" }>({ name: "Owner", role: "OWNER" });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [modal, setModal] = useState<"product" | "material" | "payment" | "expense" | "production" | "purchase" | "capital" | "party" | "receipt" | "b2b-order" | "b2b-delivery" | "b2b-invoice" | null>(null);
+  const [discount, setDiscount] = useState(0);
+  const [supplierReturns, setSupplierReturns] = useState<SupplierReturn[]>([]);
+  const [cashRecons, setCashRecons] = useState<CashRecon[]>([]);
+  const [modal, setModal] = useState<"product" | "material" | "payment" | "expense" | "production" | "purchase" | "capital" | "party" | "receipt" | "b2b-order" | "b2b-delivery" | "b2b-invoice" | "return" | "cash-recon" | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [lastSale, setLastSale] = useState<{ id: string; total: number; method: PaymentMethod; paid: number; change: number; items: CartItem[] } | null>(null);
+  const [lastSale, setLastSale] = useState<{ id: string; subtotal: number; discount: number; total: number; method: PaymentMethod; paid: number; change: number; items: CartItem[] } | null>(null);
   const [dark, setDark] = useState(false);
   const [b2bOrders, setB2bOrders] = useState<SalesOrder[]>([]);
   const [b2bDeliveries, setB2bDeliveries] = useState<DeliveryOrder[]>([]);
@@ -216,6 +221,8 @@ export default function Home() {
         if (parsed.payables) setPayables(parsed.payables);
         if (parsed.sales) setSales(parsed.sales);
         if (typeof parsed.salesCount === "number") setSalesCount(parsed.salesCount);
+        if (parsed.supplierReturns) setSupplierReturns(parsed.supplierReturns);
+        if (parsed.cashRecons) setCashRecons(parsed.cashRecons);
       } catch { /* use seed data when local state is malformed */ }
     }
   }, []);
@@ -320,8 +327,8 @@ export default function Home() {
     // every load and must never sit in localStorage, which is shared across
     // whichever account is logged in on this device (e.g. a shared cashier tablet).
     if (BACKEND_ENABLED) return;
-    window.localStorage.setItem("dapurkasir-demo", JSON.stringify({ products, materials, receivables, expenses, purchases, batches, capitalEntries, payables, sales, salesCount }));
-  }, [products, materials, receivables, expenses, purchases, batches, capitalEntries, payables, sales, salesCount]);
+    window.localStorage.setItem("dapurkasir-demo", JSON.stringify({ products, materials, receivables, expenses, purchases, batches, capitalEntries, payables, sales, salesCount, supplierReturns, cashRecons }));
+  }, [products, materials, receivables, expenses, purchases, batches, capitalEntries, payables, sales, salesCount, supplierReturns, cashRecons]);
 
   useEffect(() => {
     if (!toast) return;
@@ -346,7 +353,7 @@ export default function Home() {
     setCart((current) => current.flatMap((item) => item.id === id ? (item.qty + delta <= 0 ? [] : [{ ...item, qty: item.qty + delta }]) : [item]));
   };
 
-  const openCreate = (kind: "product" | "material" | "expense" | "production" | "purchase" | "capital" | "party" | "b2b-order" | "b2b-delivery" | "b2b-invoice") => setModal(kind);
+  const openCreate = (kind: "product" | "material" | "expense" | "production" | "purchase" | "capital" | "party" | "b2b-order" | "b2b-delivery" | "b2b-invoice" | "return" | "cash-recon") => setModal(kind);
 
   const saveBusinessProfile = async (profile: BusinessProfile) => {
     if (BACKEND_ENABLED) {
@@ -358,29 +365,33 @@ export default function Home() {
     notify("Profil usaha berhasil disimpan.");
   };
 
-  const handlePayment = async (method: PaymentMethod, cash: number, customer: string, dueDate: string, override: string) => {
+  const handlePayment = async (method: PaymentMethod, cash: number, customer: string, dueDate: string, override: string, discountValue: number) => {
     if (!cart.length) return notify("Keranjang masih kosong.", "error");
     if (plan.name !== "PRO" && salesCount >= plan.salesLimit) return notify(`Batas ${plan.salesLimit} transaksi bulan ini telah tercapai. Upgrade ke PRO untuk melanjutkan.`, "error");
     const shortage = cart.filter((item) => item.qty > item.stock);
     if (shortage.length && (!override || override.trim().length < 5)) return notify(`Stok ${shortage[0].name} tidak mencukupi. Owner perlu alasan override minimal 5 karakter.`, "error");
-    if (method === "TUNAI" && cash < cartTotal) return notify(`Pembayaran kurang ${rupiah(cartTotal - cash)}.`, "error");
+    const subtotal = cartTotal;
+    const finalDiscount = Math.max(0, Math.min(discountValue, subtotal));
+    const total = subtotal - finalDiscount;
+    if (method === "TUNAI" && cash < total) return notify(`Pembayaran kurang ${rupiah(total - cash)}.`, "error");
     if (method === "HUTANG" && (!customer || !dueDate)) return notify("Pilih pelanggan dan tanggal jatuh tempo untuk penjualan hutang.", "error");
     const saleId = `TRX-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${String(salesCount + 1).padStart(3, "0")}`;
-    const paid = method === "TUNAI" ? cash : method === "HUTANG" ? 0 : cartTotal;
-    const change = method === "TUNAI" ? cash - cartTotal : 0;
+    const paid = method === "TUNAI" ? cash : method === "HUTANG" ? 0 : total;
+    const change = method === "TUNAI" ? cash - total : 0;
     if (BACKEND_ENABLED) {
-      try { await backendRequest("/api/pos/checkout", { method: "POST", body: JSON.stringify({ payment_method: method, customer_name: customer, due_date: dueDate, paid_amount: paid, override_reason: override || null, items: cart.map((item) => ({ item_id: item.id, qty: item.qty, unit_price: item.price })) }) }); }
+      try { await backendRequest("/api/pos/checkout", { method: "POST", body: JSON.stringify({ payment_method: method, customer_name: customer, due_date: dueDate, paid_amount: paid, discount: finalDiscount, override_reason: override || null, items: cart.map((item) => ({ item_id: item.id, qty: item.qty, unit_price: item.price })) }) }); }
       catch (error) { return notify(error instanceof Error ? error.message : "Transaksi gagal diproses.", "error"); }
     }
     setProducts((current) => current.map((product) => {
       const sold = cart.find((item) => item.id === product.id);
       return sold ? { ...product, stock: product.stock - sold.qty } : product;
     }));
-    setSales((current) => [{ id: saleId, date: new Date().toISOString().slice(0, 10), total: cartTotal, cogs: cart.reduce((sum, item) => sum + item.cogs * item.qty, 0) }, ...current]);
-    if (method === "HUTANG") setReceivables((current) => [{ id: `r-${Date.now()}`, customer, invoice: saleId, amount: cartTotal, paid: 0, due: dueDate }, ...current]);
+    setSales((current) => [{ id: saleId, date: new Date().toISOString().slice(0, 10), total, cogs: cart.reduce((sum, item) => sum + item.cogs * item.qty, 0) }, ...current]);
+    if (method === "HUTANG") setReceivables((current) => [{ id: `r-${Date.now()}`, customer, invoice: saleId, amount: total, paid: 0, due: dueDate }, ...current]);
     setSalesCount((count) => count + 1);
-    setLastSale({ id: saleId, total: cartTotal, method, paid, change, items: cart });
+    setLastSale({ id: saleId, subtotal, discount: finalDiscount, total, method, paid, change, items: cart });
     setCart([]);
+    setDiscount(0);
     setModal("receipt");
   };
 
@@ -527,6 +538,53 @@ export default function Home() {
     }
     setReceivables((current) => current.map((item) => item.id === id ? { ...item, paid: item.paid + amount } : item));
     notify(`Pembayaran ${rupiah(amount)} diterima.`);
+  };
+
+  const sendWhatsApp = (phone: string, message: string) => {
+    const clean = phone.replace(/[^0-9]/g, "").replace(/^0/, "62");
+    if (!clean) return notify("Nomor WhatsApp pelanggan belum diisi.", "error");
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`, "_blank");
+  };
+
+  const saveSupplierReturn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const purchaseId = String(form.get("purchase") || "");
+    const materialId = String(form.get("material") || "");
+    const qty = Number(form.get("qty") || 0);
+    const supplierId = String(form.get("supplier") || "");
+    const reason = String(form.get("reason") || "Retur barang");
+    const notes = String(form.get("notes") || "");
+    const material = materials.find((item) => item.id === materialId);
+    if (!purchaseId || !material || qty <= 0) return notify("Pembelian, bahan, dan kuantitas retur wajib diisi.", "error");
+    const total = qty * material.lastBuy;
+    if (BACKEND_ENABLED) {
+      try { await backendRequest("/api/supplier-returns", { method: "POST", body: JSON.stringify({ purchase_id: purchaseId, supplier_id: supplierId || null, reason, notes, items: [{ item_id: materialId, qty }] }) }); }
+      catch (error) { return notify(error instanceof Error ? error.message : "Retur gagal disimpan.", "error"); }
+    }
+    const supplier = parties.find((p) => p.id === supplierId)?.name || "Supplier";
+    setSupplierReturns((current) => [{ id: `rt-${Date.now()}`, purchaseId, supplier, date: new Date().toISOString().slice(0, 10), reason, total, notes }, ...current]);
+    setMaterials((current) => current.map((item) => item.id === materialId ? { ...item, stock: item.stock - qty } : item));
+    setModal(null);
+    notify(`Retur ${material.name} ${qty} ${material.unit} tercatat, stok berkurang.`);
+  };
+
+  const saveCashReconciliation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const date = String(form.get("date") || "");
+    const systemCash = Number(form.get("systemCash") || 0);
+    const physicalCash = Number(form.get("physicalCash") || 0);
+    const notes = String(form.get("notes") || "");
+    if (!date) return notify("Tanggal rekonsiliasi wajib diisi.", "error");
+    const difference = physicalCash - systemCash;
+    if (BACKEND_ENABLED) {
+      try { await backendRequest("/api/cash-reconciliation", { method: "POST", body: JSON.stringify({ reconciliation_date: date, system_cash: systemCash, physical_cash: physicalCash, notes }) }); }
+      catch (error) { return notify(error instanceof Error ? error.message : "Rekonsiliasi gagal disimpan.", "error"); }
+    }
+    setCashRecons((current) => [{ id: `cr-${Date.now()}`, date, systemCash, physicalCash, difference, notes, status: "open" }, ...current.filter((item) => item.date !== date)]);
+    setModal(null);
+    notify(difference === 0 ? "Kas seimbang. Rekonsiliasi tersimpan." : `Rekonsiliasi tersimpan. Selisih ${rupiah(difference)}.`);
   };
 
   const saveB2BOrder = async (event: FormEvent<HTMLFormElement>) => {
@@ -716,14 +774,15 @@ export default function Home() {
           </div>
         </header>
         {view === "dashboard" && <Dashboard products={products} materials={materials} expenses={expenses} receivables={receivables} sales={sales} salesCount={salesCount} dueReceivables={dueReceivables} dashboardData={dashboardData} plan={plan} businessName={businessName} navigate={navigate} />}
-        {view === "pos" && <POS products={products} cart={cart} total={cartTotal} onAdd={addToCart} onChangeQty={changeCartQty} onPay={() => setModal("payment")} onNewProduct={() => openCreate("product")} />}
+        {view === "pos" && <POS products={products} cart={cart} total={cartTotal} discount={discount} onDiscountChange={setDiscount} onAdd={addToCart} onChangeQty={changeCartQty} onPay={() => setModal("payment")} onNewProduct={() => openCreate("product")} />}
         {view === "products" && <ItemList title="Produk Jadi" description="Kelola produk siap jual dan pantau stoknya." items={products} kind="product" onAdd={() => openCreate("product")} onNavigate={navigate} onImport={(file) => importItems(file, "PRODUCT")} onDownloadTemplate={() => downloadItemTemplate("PRODUCT")} />}
         {view === "materials" && <MaterialList materials={materials} onAdd={() => openCreate("material")} onImport={(file) => importItems(file, "RAW_MATERIAL")} onDownloadTemplate={() => downloadItemTemplate("RAW_MATERIAL")} />}
         {view === "production" && <ProductionView batches={batches} products={products} materials={materials} onAdd={() => openCreate("production")} />}
-         {view === "purchases" && <PurchaseView2 purchases={purchases} materials={materials} onAdd={() => openCreate("purchase")} onPay={payPayable} />}
-        {view === "parties" && <PartyView parties={parties} onAdd={() => openCreate("party")} />}
+         {view === "purchases" && <PurchaseView2 purchases={purchases} materials={materials} onAdd={() => openCreate("purchase")} onPay={payPayable} onReturn={() => openCreate("return")} />}
+        {view === "parties" && <PartyView parties={parties} onAdd={() => openCreate("party")} onWhatsApp={sendWhatsApp} />}
         {view === "receivables" && <ReceivableView receivables={receivables} onPay={payReceivable} />}
         {view === "expenses" && <ExpenseView expenses={expenses} onAdd={() => openCreate("expense")} />}
+        {view === "cash-recon" && <CashReconView recons={cashRecons} onAdd={() => openCreate("cash-recon")} />}
          {view === "reports" && <ReportView2 expenses={expenses} capitalEntries={capitalEntries} purchases={purchases} receivables={receivables} products={products} sales={sales} exportReport={exportReport} onAddCapital={() => openCreate("capital")} />}
          {view === "b2b-orders" && <B2BOrderView orders={b2bOrders} onAdd={() => openCreate("b2b-order")} onConfirm={confirmB2BOrder} />}
          {view === "b2b-deliveries" && <B2BDeliveryView deliveries={b2bDeliveries} orders={b2bOrders} onAdd={() => openCreate("b2b-delivery")} onDeliver={deliverB2BOrder} />}
@@ -745,6 +804,8 @@ export default function Home() {
       {modal === "b2b-order" && <B2BOrderModal customers={parties.filter((p) => p.type === "CUSTOMER")} products={products} onClose={() => setModal(null)} onSave={saveB2BOrder} />}
       {modal === "b2b-delivery" && <B2BDeliveryModal orders={b2bOrders.filter((so) => so.status === "CONFIRMED")} onClose={() => setModal(null)} onSave={createB2BDelivery} />}
       {modal === "b2b-invoice" && <B2BInvoiceModal orders={b2bOrders.filter((so) => so.status === "DELIVERED")} onClose={() => setModal(null)} onSave={createB2BInvoice} />}
+      {modal === "return" && <SupplierReturnModal purchases={purchases} materials={materials} suppliers={parties.filter((p) => p.type === "SUPPLIER")} onClose={() => setModal(null)} onSave={saveSupplierReturn} />}
+      {modal === "cash-recon" && <CashReconModal onClose={() => setModal(null)} onSave={saveCashReconciliation} />}
       {toast && <div className={`toast ${toast.tone}`} role="status"><Check size={16} />{toast.message}</div>}
       {mobileSheetOpen && <MobileNavSheet view={view} navigate={(v) => { navigate(v); setMobileSheetOpen(false); }} onClose={() => setMobileSheetOpen(false)} role={account.role} />}
     </div>
@@ -870,12 +931,12 @@ function Dashboard({ products, materials, expenses, receivables, sales, salesCou
 function Kpi({ label, value, foot, icon, tone }: { label: string; value: string; foot: ReactNode; icon: ReactNode; tone?: "warning" }) { return <div className="kpi-card"><div className="kpi-top"><span className="kpi-label">{label}</span><span className={`kpi-icon ${tone === "warning" ? "" : ""}`}>{icon}</span></div><p className="kpi-value">{value}</p><div className="kpi-foot">{foot}</div></div>; }
 function Activity({ icon, title, detail, value, time }: { icon: ReactNode; title: string; detail: string; value: string; time: string }) { return <div className="activity-row"><div className="item-avatar">{icon}</div><div className="row-main"><strong>{title}</strong><span>{detail} · {time}</span></div><span className="row-side">{value}</span></div>; }
 
-function POS({ products, cart, total, onAdd, onChangeQty, onPay, onNewProduct }: { products: Product[]; cart: CartItem[]; total: number; onAdd: (product: Product) => void; onChangeQty: (id: string, delta: number) => void; onPay: () => void; onNewProduct: () => void }) {
+function POS({ products, cart, total, discount, onDiscountChange, onAdd, onChangeQty, onPay, onNewProduct }: { products: Product[]; cart: CartItem[]; total: number; discount: number; onDiscountChange: (value: number) => void; onAdd: (product: Product) => void; onChangeQty: (id: string, delta: number) => void; onPay: () => void; onNewProduct: () => void }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Semua");
   const categories = ["Semua", ...Array.from(new Set(products.map((item) => item.category)))];
   const filtered = products.filter((item) => item.name.toLowerCase().includes(search.toLowerCase()) && (category === "Semua" || item.category === category));
-  return <main className="pos-page"><div className="pos-layout"><section><div className="pos-heading"><div><p className="eyebrow">Shift pagi · kasir aktif</p><h1>Mulai transaksi</h1><p>Pilih produk atau cari nama menu di bawah.</p></div><div className="pos-controls"><button className="button button-secondary" onClick={onNewProduct}><Plus size={16} /><span>Produk baru</span></button><button className="icon-button" aria-label="Pengaturan POS"><SlidersHorizontal size={17} /></button></div></div><div className="search-field pos-search"><Search size={17} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari produk..." aria-label="Cari produk" /></div><div className="category-row">{categories.map((item) => <button key={item} className={`category-chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="product-grid">{filtered.map((product) => <button className="product-card" key={product.id} onClick={() => onAdd(product)} disabled={!product.active}><div className="product-card-top"><span className="product-emoji">{product.emoji}</span><span className={`badge ${product.stock <= 5 ? "badge-amber" : "badge-green"}`}>{product.stock} {product.unit}</span></div><div><p className="product-name">{product.name}</p><span className="product-price">{rupiah(product.price)}</span></div></button>)}{!filtered.length && <div className="empty-state"><Search size={24} /><strong>Produk tidak ditemukan</strong><p>Coba kata kunci atau kategori lain.</p></div>}</div></section><aside className="card cart-panel"><div className="cart-header"><div><h2>Keranjang</h2><span style={{ color: "var(--muted)", fontSize: 11 }}>Transaksi baru</span></div><span className="cart-count">{cart.reduce((sum, item) => sum + item.qty, 0)} item</span></div><div className="cart-items">{cart.length ? cart.map((item) => <div className="cart-item" key={item.id}><div><strong>{item.name}</strong><small>{rupiah(item.price)} / {item.unit}</small><div className="qty-control"><button className="qty-button" onClick={() => onChangeQty(item.id, -1)} aria-label={`Kurangi ${item.name}`}><Minus size={14} /></button><span className="qty-number">{item.qty}</span><button className="qty-button" onClick={() => onChangeQty(item.id, 1)} aria-label={`Tambah ${item.name}`}><Plus size={14} /></button></div></div><span className="cart-subtotal">{rupiah(item.price * item.qty)}</span></div>) : <div className="empty-state"><ShoppingCart size={25} /><strong>Keranjang masih kosong</strong><p>Tap produk di sebelah kiri untuk mulai menambahkan pesanan.</p></div>}</div><div className="cart-footer"><div className="total-row"><span>Total tagihan</span><strong>{rupiah(total)}</strong></div><button className="button button-primary" style={{ width: "100%", minHeight: 48 }} disabled={!cart.length} onClick={onPay}>Bayar sekarang <ChevronRight size={17} /></button></div></aside></div></main>;
+  return <main className="pos-page"><div className="pos-layout"><section><div className="pos-heading"><div><p className="eyebrow">Shift pagi · kasir aktif</p><h1>Mulai transaksi</h1><p>Pilih produk atau cari nama menu di bawah.</p></div><div className="pos-controls"><button className="button button-secondary" onClick={onNewProduct}><Plus size={16} /><span>Produk baru</span></button><button className="icon-button" aria-label="Pengaturan POS"><SlidersHorizontal size={17} /></button></div></div><div className="search-field pos-search"><Search size={17} /><input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari produk..." aria-label="Cari produk" /></div><div className="category-row">{categories.map((item) => <button key={item} className={`category-chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="product-grid">{filtered.map((product) => <button className="product-card" key={product.id} onClick={() => onAdd(product)} disabled={!product.active}><div className="product-card-top"><span className="product-emoji">{product.emoji}</span><span className={`badge ${product.stock <= 5 ? "badge-amber" : "badge-green"}`}>{product.stock} {product.unit}</span></div><div><p className="product-name">{product.name}</p><span className="product-price">{rupiah(product.price)}</span></div></button>)}{!filtered.length && <div className="empty-state"><Search size={24} /><strong>Produk tidak ditemukan</strong><p>Coba kata kunci atau kategori lain.</p></div>}</div></section><aside className="card cart-panel"><div className="cart-header"><div><h2>Keranjang</h2><span style={{ color: "var(--muted)", fontSize: 11 }}>Transaksi baru</span></div><span className="cart-count">{cart.reduce((sum, item) => sum + item.qty, 0)} item</span></div><div className="cart-items">{cart.length ? cart.map((item) => <div className="cart-item" key={item.id}><div><strong>{item.name}</strong><small>{rupiah(item.price)} / {item.unit}</small><div className="qty-control"><button className="qty-button" onClick={() => onChangeQty(item.id, -1)} aria-label={`Kurangi ${item.name}`}><Minus size={14} /></button><span className="qty-number">{item.qty}</span><button className="qty-button" onClick={() => onChangeQty(item.id, 1)} aria-label={`Tambah ${item.name}`}><Plus size={14} /></button></div></div><span className="cart-subtotal">{rupiah(item.price * item.qty)}</span></div>) : <div className="empty-state"><ShoppingCart size={25} /><strong>Keranjang masih kosong</strong><p>Tap produk di sebelah kiri untuk mulai menambahkan pesanan.</p></div>}</div><div className="cart-footer"><div className="total-row"><span>Subtotal</span><strong>{rupiah(total)}</strong></div>{discount > 0 && <div className="total-row"><span>Diskon</span><strong className="negative">-{rupiah(discount)}</strong></div>}<div className="total-row"><span>Total tagihan</span><strong>{rupiah(Math.max(0, total - discount))}</strong></div><div className="field" style={{ marginBottom: 12 }}><label htmlFor="pos-discount">Diskon (Rp)</label><input className="input" id="pos-discount" type="number" min="0" max={total} value={discount || ""} placeholder="0" onChange={(event) => onDiscountChange(Math.max(0, Number(event.target.value) || 0))} /></div><button className="button button-primary" style={{ width: "100%", minHeight: 48 }} disabled={!cart.length} onClick={onPay}>Bayar sekarang <ChevronRight size={17} /></button></div></aside></div></main>;
 }
 
 function ItemList({ title, description, items, kind, onAdd, onNavigate, onImport, onDownloadTemplate }: { title: string; description: string; items: Product[]; kind: "product"; onAdd: () => void; onNavigate: (view: View) => void; onImport: (file: File) => void; onDownloadTemplate: () => void }) {
@@ -899,22 +960,25 @@ function ProductionView({ batches, products, materials, onAdd }: { batches: Batc
 
 function PurchaseView({ purchases, materials, onAdd }: { purchases: Purchase[]; materials: Material[]; onAdd: () => void }) { const debt = purchases.reduce((sum, item) => sum + item.remaining, 0); return <main className="page"><PageHeading eyebrow="Operasional" title="Pembelian bahan" description="Catat pembelian, perbarui stok, dan pantau utang supplier." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Catat pembelian</button>} /><div className="page-card-grid"><div className="mini-stat"><span className="mini-stat-label">Pembelian bulan ini</span><p className="mini-stat-value">{purchases.length}</p></div><div className="mini-stat"><span className="mini-stat-label">Total belanja</span><p className="mini-stat-value">{shortRupiah(purchases.reduce((sum, item) => sum + item.total, 0))}</p></div><div className="mini-stat"><span className="mini-stat-label">Utang supplier</span><p className="mini-stat-value negative">{shortRupiah(debt)}</p></div></div><section className="card table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Tanggal</th><th>Supplier</th><th>Detail</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>{purchases.map((purchase) => <tr key={purchase.id}><td className="table-muted">{dateLabel(purchase.date)}</td><td className="table-primary">{purchase.supplier}</td><td>{materials.length} bahan tercatat</td><td className="table-primary">{rupiah(purchase.total)}</td><td><span className={`badge ${purchase.status === "LUNAS" ? "badge-green" : "badge-amber"}`}>{purchase.status === "LUNAS" ? "Lunas" : purchase.status === "SEBAGIAN" ? "Sebagian" : "Belum lunas"}</span></td><td><button className="button button-ghost"><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table></section></main>; }
 
-function PartyView({ parties, onAdd }: { parties: Party[]; onAdd: () => void }) {
+function PartyView({ parties, onAdd, onWhatsApp }: { parties: Party[]; onAdd: () => void; onWhatsApp: (phone: string, message: string) => void }) {
   const customers = parties.filter((item) => item.type === "CUSTOMER");
   const suppliers = parties.filter((item) => item.type === "SUPPLIER");
-  const table = (rows: Party[], emptyLabel: string) => rows.length
-    ? <section className="card table-wrap"><table><thead><tr><th>Nama</th><th>Telepon</th><th>Alamat</th><th className="text-right">Limit piutang</th></tr></thead><tbody>{rows.map((item) => <tr key={item.id}><td className="table-primary">{item.name}</td><td>{item.phone || <span className="table-muted">-</span>}</td><td>{item.address || <span className="table-muted">-</span>}</td><td className="text-right">{item.creditLimit > 0 ? rupiah(item.creditLimit) : <span className="table-muted">Tanpa limit</span>}</td></tr>)}</tbody></table></section>
-    : <section className="card card-pad"><p className="table-muted">{emptyLabel}</p></section>;
+  const customerTable = () => customers.length
+    ? <section className="card table-wrap"><table><thead><tr><th>Nama</th><th>Telepon</th><th>Alamat</th><th className="text-right">Limit piutang</th><th></th></tr></thead><tbody>{customers.map((item) => <tr key={item.id}><td className="table-primary">{item.name}</td><td>{item.phone || <span className="table-muted">-</span>}</td><td>{item.address || <span className="table-muted">-</span>}</td><td className="text-right">{item.creditLimit > 0 ? rupiah(item.creditLimit) : <span className="table-muted">Tanpa limit</span>}</td><td>{item.phone && <button className="button button-secondary" style={{ minHeight: 34, padding: "0 11px", fontSize: 11 }} onClick={() => onWhatsApp(item.phone, `Halo ${item.name},`)}>Kirim WA</button>}</td></tr>)}</tbody></table></section>
+    : <section className="card card-pad"><p className="table-muted">Belum ada pelanggan. Akan terisi otomatis saat ada penjualan hutang.</p></section>;
+  const supplierTable = () => suppliers.length
+    ? <section className="card table-wrap"><table><thead><tr><th>Nama</th><th>Telepon</th><th>Alamat</th><th className="text-right">Limit piutang</th></tr></thead><tbody>{suppliers.map((item) => <tr key={item.id}><td className="table-primary">{item.name}</td><td>{item.phone || <span className="table-muted">-</span>}</td><td>{item.address || <span className="table-muted">-</span>}</td><td className="text-right">{item.creditLimit > 0 ? rupiah(item.creditLimit) : <span className="table-muted">Tanpa limit</span>}</td></tr>)}</tbody></table></section>
+    : <section className="card card-pad"><p className="table-muted">Belum ada supplier. Akan terisi otomatis saat ada pembelian.</p></section>;
   return <main className="page">
-    <PageHeading eyebrow="Operasional" title="Pelanggan & supplier" description="Pelanggan baru otomatis tercatat saat penjualan hutang, supplier saat pembelian." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Tambah</button>} />
+    <PageHeading eyebrow="Operasional" title="Pelanggan & supplier" description="Kelola data kontak bisnis untuk transaksi dan follow-up." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Tambah</button>} />
     <div className="page-card-grid">
       <div className="mini-stat"><span className="mini-stat-label">Pelanggan</span><p className="mini-stat-value">{customers.length}</p></div>
       <div className="mini-stat"><span className="mini-stat-label">Supplier</span><p className="mini-stat-value">{suppliers.length}</p></div>
     </div>
     <div className="section-header" style={{ marginTop: 18 }}><div><h2>Pelanggan</h2><p>Dipakai untuk penjualan hutang dan piutang</p></div><UserRound size={18} color="var(--primary)" /></div>
-    {table(customers, "Belum ada pelanggan. Akan terisi otomatis saat ada penjualan hutang.")}
+    {customerTable()}
     <div className="section-header" style={{ marginTop: 22 }}><div><h2>Supplier</h2><p>Dipakai untuk pembelian bahan dan utang usaha</p></div><Truck size={18} color="var(--primary)" /></div>
-    {table(suppliers, "Belum ada supplier. Akan terisi otomatis saat ada pembelian.")}
+    {supplierTable()}
   </main>;
 }
 
@@ -965,18 +1029,18 @@ function ProductionModal({ products, materials, onClose, onSave }: { products: P
 
 function PurchaseModal({ materials, onClose, onSave }: { materials: Material[]; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) { return <Modal title="Catat pembelian" description="Stok bahan dan harga beli terakhir akan langsung diperbarui." onClose={onClose}><form onSubmit={onSave}><div className="form-grid"><div className="field full"><label htmlFor="supplier">Supplier <span>*</span></label><select className="select" id="supplier" name="supplier" defaultValue=""><option value="" disabled>Pilih supplier</option><option>Pasar Segar Bu Ani</option><option>CV Sumber Pangan</option><option>Kemasan Kita</option></select></div><div className="field full"><label htmlFor="material">Bahan baku <span>*</span></label><select className="select" id="material" name="material" defaultValue=""><option value="" disabled>Pilih bahan</option>{materials.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>)}</select></div><div className="field"><label htmlFor="qty">Kuantitas <span>*</span></label><input className="input" id="qty" name="qty" type="number" min="0.01" step="0.01" placeholder="0" /></div><div className="field"><label htmlFor="price">Harga / unit <span>*</span></label><input className="input" id="price" name="price" type="number" min="0" placeholder="0" /></div><div className="field full"><label htmlFor="status">Status pembayaran</label><select className="select" id="status" name="status" defaultValue="LUNAS"><option value="LUNAS">Lunas</option><option value="UTANG">Hutang supplier</option></select></div></div><ModalFooter onClose={onClose} submitLabel="Simpan pembelian" /></form></Modal>; }
 
-function PaymentModal({ total, customers, onCreateCustomer, onClose, onPay }: { total: number; customers: string[]; onCreateCustomer: (name: string) => Promise<string | null>; onClose: () => void; onPay: (method: PaymentMethod, cash: number, customer: string, due: string, override: string) => void }) {
-  const [method, setMethod] = useState<PaymentMethod>('TUNAI'); const [cash, setCash] = useState(total); const [customer, setCustomer] = useState(''); const [due, setDue] = useState('2026-08-31'); const [override, setOverride] = useState(''); const [creating, setCreating] = useState(false);
+function PaymentModal({ total, customers, onCreateCustomer, onClose, onPay }: { total: number; customers: string[]; onCreateCustomer: (name: string) => Promise<string | null>; onClose: () => void; onPay: (method: PaymentMethod, cash: number, customer: string, due: string, override: string, discount: number) => void }) {
+  const [method, setMethod] = useState<PaymentMethod>('TUNAI'); const [cash, setCash] = useState(total); const [customer, setCustomer] = useState(''); const [due, setDue] = useState('2026-08-31'); const [override, setOverride] = useState(''); const [creating, setCreating] = useState(false); const [discount, setDiscount] = useState(0); const payableTotal = Math.max(0, total - discount);
   const methods: { id: PaymentMethod; label: string; icon: typeof CreditCard }[] = [{ id: 'TUNAI', label: 'Tunai', icon: CircleDollarSign }, { id: 'QRIS', label: 'QRIS', icon: QrCode }, { id: 'TRANSFER', label: 'Transfer', icon: CreditCard }, { id: 'HUTANG', label: 'Hutang', icon: ClipboardList }];
   const createCustomer = async () => { if (!customer.trim()) return; setCreating(true); const name = await onCreateCustomer(customer); if (name) setCustomer(name); setCreating(false); };
-  return <Modal title="Pembayaran" description="Pilih metode pembayaran untuk menyelesaikan transaksi." onClose={onClose}><div className="amount-preview"><span>Total tagihan</span><strong>{rupiah(total)}</strong></div><div className="modal-divider" /><div className="field"><label>Metode pembayaran</label><div className="payment-methods">{methods.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={`payment-method ${method === item.id ? 'active' : ''}`} onClick={() => setMethod(item.id)}><Icon size={18} />{item.label}</button>; })}</div></div>{method === 'TUNAI' && <div className="form-grid" style={{ marginTop: 17 }}><div className="field full"><label htmlFor="cash">Uang diterima</label><input className="input" id="cash" type="number" min={total} value={cash} onChange={(event) => setCash(Number(event.target.value))} /></div><div className="callout success field full"><CircleDollarSign size={17} /><div><strong>Kembalian {cash >= total ? rupiah(cash - total) : 'Belum cukup'}</strong><p>{cash >= total ? 'Nominal siap dikonfirmasi.' : `Kurang ${rupiah(total - cash)}`}</p></div></div></div>}{method === 'HUTANG' && <div className="form-grid" style={{ marginTop: 17 }}><div className="field full"><label htmlFor="customer">Nama pelanggan</label><div style={{ display: 'flex', gap: 8 }}><input className="input" id="customer" value={customer} onChange={(event) => setCustomer(event.target.value)} list="customer-options" placeholder="Pilih atau ketik nama pelanggan" /><button type="button" className="button button-secondary" disabled={creating || !customer.trim() || customers.some((name) => name.toLowerCase() === customer.trim().toLowerCase())} onClick={createCustomer}>{creating ? 'Menyimpan...' : 'New Customer'}</button></div><datalist id="customer-options">{customers.map((name) => <option key={name} value={name} />)}</datalist></div><div className="field"><label htmlFor="due">Jatuh tempo</label><input className="input" id="due" type="date" value={due} onChange={(event) => setDue(event.target.value)} /></div><div className="field full"><label htmlFor="override">Alasan override stok (jika perlu)</label><textarea className="textarea" id="override" value={override} onChange={(event) => setOverride(event.target.value)} /></div></div>}<div className="modal-footer"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="button" className="button button-primary" onClick={() => onPay(method, cash, customer, due, override)}>Bayar sekarang<Check size={16} /></button></div></Modal>;
+  return <Modal title="Pembayaran" description="Pilih metode pembayaran untuk menyelesaikan transaksi." onClose={onClose}><div className="amount-preview"><span>Total tagihan</span><strong>{rupiah(payableTotal)}</strong></div><div className="field" style={{ marginTop: 12 }}><label htmlFor="discount">Diskon (Rp)</label><input className="input" id="discount" type="number" min="0" max={total} value={discount || ""} placeholder="0" onChange={(event) => setDiscount(Math.max(0, Number(event.target.value) || 0))} /></div><div className="modal-divider" /><div className="field"><label>Metode pembayaran</label><div className="payment-methods">{methods.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={`payment-method ${method === item.id ? 'active' : ''}`} onClick={() => setMethod(item.id)}><Icon size={18} />{item.label}</button>; })}</div></div>{method === 'TUNAI' && <div className="form-grid" style={{ marginTop: 17 }}><div className="field full"><label htmlFor="cash">Uang diterima</label><input className="input" id="cash" type="number" min={payableTotal} value={cash} onChange={(event) => setCash(Number(event.target.value))} /></div><div className="callout success field full"><CircleDollarSign size={17} /><div><strong>Kembalian {cash >= payableTotal ? rupiah(cash - payableTotal) : 'Belum cukup'}</strong><p>{cash >= payableTotal ? 'Nominal siap dikonfirmasi.' : `Kurang ${rupiah(payableTotal - cash)}`}</p></div></div></div>}{method === 'HUTANG' && <div className="form-grid" style={{ marginTop: 17 }}><div className="field full"><label htmlFor="customer">Nama pelanggan</label><div style={{ display: 'flex', gap: 8 }}><input className="input" id="customer" value={customer} onChange={(event) => setCustomer(event.target.value)} list="customer-options" placeholder="Pilih atau ketik nama pelanggan" /><button type="button" className="button button-secondary" disabled={creating || !customer.trim() || customers.some((name) => name.toLowerCase() === customer.trim().toLowerCase())} onClick={createCustomer}>{creating ? 'Menyimpan...' : 'New Customer'}</button></div><datalist id="customer-options">{customers.map((name) => <option key={name} value={name} />)}</datalist></div><div className="field"><label htmlFor="due">Jatuh tempo</label><input className="input" id="due" type="date" value={due} onChange={(event) => setDue(event.target.value)} /></div><div className="field full"><label htmlFor="override">Alasan override stok (jika perlu)</label><textarea className="textarea" id="override" value={override} onChange={(event) => setOverride(event.target.value)} /></div></div>}<div className="modal-footer"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="button" className="button button-primary" onClick={() => onPay(method, cash, customer, due, override, discount)}>Bayar sekarang<Check size={16} /></button></div></Modal>;
 }function ShieldIcon() { return <span style={{ display: "grid", placeItems: "center", width: 17, height: 17, border: "2px solid currentColor", borderRadius: "50%", fontSize: 9 }}>✓</span>; }
-function ReceiptModal({ sale, onClose, onPrint }: { sale: { id: string; total: number; method: PaymentMethod; paid: number; change: number; items: CartItem[] }; onClose: () => void; onPrint: () => void }) { return <Modal title="Transaksi berhasil" description={`Nomor transaksi ${sale.id}`} onClose={onClose}><div className="receipt"><div className="receipt-head"><strong>DAPUR SARI NUSANTARA</strong><span>Jl. Melati No. 18, Bandung</span><span>24 Agustus 2026 · 10:42</span></div>{sale.items.map((item) => <div className="receipt-line" key={item.id}><span>{item.name} x{item.qty}</span><strong>{rupiah(item.price * item.qty)}</strong></div>)}<div className="receipt-line receipt-total"><span>TOTAL</span><strong>{rupiah(sale.total)}</strong></div><div className="receipt-line"><span>{sale.method}</span><span>{rupiah(sale.paid)}</span></div>{sale.change > 0 && <div className="receipt-line"><span>Kembalian</span><strong>{rupiah(sale.change)}</strong></div>}<div className="receipt-foot">Terima kasih sudah mendukung usaha lokal.</div></div><div className="modal-footer" style={{ paddingLeft: 0, paddingRight: 0 }}><button className="button button-secondary" onClick={onPrint}><Printer size={16} />Cetak struk</button><button className="button button-primary" onClick={() => { navigator.share?.({ title: "Struk DapurKasir", text: `Transaksi ${sale.id} sebesar ${rupiah(sale.total)}` }); }}>Bagikan struk</button></div><button className="button button-ghost" style={{ width: "100%" }} onClick={onClose}>Transaksi baru</button></Modal>; }
+function ReceiptModal({ sale, onClose, onPrint }: { sale: { id: string; subtotal: number; discount: number; total: number; method: PaymentMethod; paid: number; change: number; items: CartItem[] }; onClose: () => void; onPrint: () => void }) { return <Modal title="Transaksi berhasil" description={`Nomor transaksi ${sale.id}`} onClose={onClose}><div className="receipt"><div className="receipt-head"><strong>DAPUR SARI NUSANTARA</strong><span>Jl. Melati No. 18, Bandung</span><span>24 Agustus 2026 · 10:42</span></div>{sale.items.map((item) => <div className="receipt-line" key={item.id}><span>{item.name} x{item.qty}</span><strong>{rupiah(item.price * item.qty)}</strong></div>)}<div className="receipt-line"><span>Subtotal</span><strong>{rupiah(sale.subtotal)}</strong></div>{sale.discount > 0 && <div className="receipt-line"><span>Diskon</span><strong>-{rupiah(sale.discount)}</strong></div>}<div className="receipt-line receipt-total"><span>TOTAL</span><strong>{rupiah(sale.total)}</strong></div><div className="receipt-line"><span>{sale.method}</span><span>{rupiah(sale.paid)}</span></div>{sale.change > 0 && <div className="receipt-line"><span>Kembalian</span><strong>{rupiah(sale.change)}</strong></div>}<div className="receipt-foot">Terima kasih sudah mendukung usaha lokal.</div></div><div className="modal-footer" style={{ paddingLeft: 0, paddingRight: 0 }}><button className="button button-secondary" onClick={onPrint}><Printer size={16} />Cetak struk</button><button className="button button-primary" onClick={() => { navigator.share?.({ title: "Struk DapurKasir", text: `Transaksi ${sale.id} sebesar ${rupiah(sale.total)}` }); }}>Bagikan struk</button></div><button className="button button-ghost" style={{ width: "100%" }} onClick={onClose}>Transaksi baru</button></Modal>; }
 
 function Modal({ title, description, children, onClose, large }: { title: string; description?: string; children: ReactNode; onClose: () => void; large?: boolean }) { return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className={`modal ${large ? "large" : ""}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><h2 id="modal-title">{title}</h2>{description && <p>{description}</p>}</div><button className="icon-button" onClick={onClose} aria-label="Tutup dialog"><X size={17} /></button></div><div className="modal-body">{children}</div></div></div>; }
 function ModalFooter({ onClose, submitLabel }: { onClose: () => void; submitLabel: string }) { return <div className="modal-footer"><button type="button" className="button button-secondary" onClick={onClose}>Batal</button><button type="submit" className="button button-primary">{submitLabel}<Check size={16} /></button></div>; }
 
-  function PurchaseView2({ purchases, materials, onAdd, onPay }: { purchases: Purchase[]; materials: Material[]; onAdd: () => void; onPay: (id: string) => void }) { const debt = purchases.reduce((sum, item) => sum + item.remaining, 0); return <main className="page"><PageHeading eyebrow="Operasional" title="Pembelian bahan" description="Catat pembelian, pembayaran parsial, dan utang supplier." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Catat pembelian</button>} /><div className="page-card-grid"><div className="mini-stat"><span className="mini-stat-label">Total pembelian</span><p className="mini-stat-value">{shortRupiah(purchases.reduce((sum, item) => sum + item.total, 0))}</p></div><div className="mini-stat"><span className="mini-stat-label">Sisa utang</span><p className="mini-stat-value negative">{shortRupiah(debt)}</p></div><div className="mini-stat"><span className="mini-stat-label">Transaksi</span><p className="mini-stat-value">{purchases.length}</p></div></div><section className="card table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Tanggal</th><th>Supplier</th><th>Total</th><th>Dibayar</th><th>Sisa</th><th>Status</th><th></th></tr></thead><tbody>{purchases.map((purchase) => <tr key={purchase.id}><td className="table-muted">{dateLabel(purchase.date)}</td><td className="table-primary">{purchase.supplier}</td><td>{rupiah(purchase.total)}</td><td>{rupiah(purchase.paid)}</td><td className="negative">{rupiah(purchase.remaining)}</td><td><span className={`badge ${purchase.status === "LUNAS" ? "badge-green" : "badge-amber"}`}>{purchase.status === "LUNAS" ? "Lunas" : purchase.status === "SEBAGIAN" ? "Sebagian" : "Belum lunas"}</span></td><td>{purchase.remaining > 0 && <button className="button button-primary" style={{ minHeight: 34, padding: "0 11px", fontSize: 11 }} onClick={() => onPay(purchase.payableId || purchase.id)}>Bayar</button>}</td></tr>)}</tbody></table></section></main>; }
+  function PurchaseView2({ purchases, materials, onAdd, onPay, onReturn }: { purchases: Purchase[]; materials: Material[]; onAdd: () => void; onPay: (id: string) => void; onReturn: () => void }) { const debt = purchases.reduce((sum, item) => sum + item.remaining, 0); return <main className="page"><PageHeading eyebrow="Operasional" title="Pembelian bahan" description="Catat pembelian, pembayaran parsial, dan utang supplier." action={<><button className="button button-secondary" onClick={onReturn}><Package size={16} />Retur ke supplier</button><button className="button button-primary" onClick={onAdd}><Plus size={17} />Catat pembelian</button></>} /><div className="page-card-grid"><div className="mini-stat"><span className="mini-stat-label">Total pembelian</span><p className="mini-stat-value">{shortRupiah(purchases.reduce((sum, item) => sum + item.total, 0))}</p></div><div className="mini-stat"><span className="mini-stat-label">Sisa utang</span><p className="mini-stat-value negative">{shortRupiah(debt)}</p></div><div className="mini-stat"><span className="mini-stat-label">Transaksi</span><p className="mini-stat-value">{purchases.length}</p></div></div><section className="card table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Tanggal</th><th>Supplier</th><th>Total</th><th>Dibayar</th><th>Sisa</th><th>Status</th><th></th></tr></thead><tbody>{purchases.map((purchase) => <tr key={purchase.id}><td className="table-muted">{dateLabel(purchase.date)}</td><td className="table-primary">{purchase.supplier}</td><td>{rupiah(purchase.total)}</td><td>{rupiah(purchase.paid)}</td><td className="negative">{rupiah(purchase.remaining)}</td><td><span className={`badge ${purchase.status === "LUNAS" ? "badge-green" : "badge-amber"}`}>{purchase.status === "LUNAS" ? "Lunas" : purchase.status === "SEBAGIAN" ? "Sebagian" : "Belum lunas"}</span></td><td>{purchase.remaining > 0 && <button className="button button-primary" style={{ minHeight: 34, padding: "0 11px", fontSize: 11 }} onClick={() => onPay(purchase.payableId || purchase.id)}>Bayar</button>}</td></tr>)}</tbody></table></section></main>; }
 
  function ReportView2({ expenses, capitalEntries, purchases, receivables, products, sales, exportReport, onAddCapital }: { expenses: Expense[]; capitalEntries: CapitalEntry[]; purchases: Purchase[]; receivables: Receivable[]; products: Product[]; sales: SaleSummary[]; exportReport: () => void; onAddCapital: () => void }) {
   const [tab, setTab] = useState("pnl");
@@ -1549,4 +1613,45 @@ function LaporanTab({ openSection, toggle }: { openSection: string | null; toggl
       </Accordion>
     </div>
   );
+}
+function SupplierReturnModal({ purchases, materials, suppliers, onClose, onSave }: { purchases: Purchase[]; materials: Material[]; suppliers: Party[]; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  return <Modal title="Retur ke supplier" description="Kurangi stok bahan yang dikembalikan ke supplier." onClose={onClose}>
+    <form onSubmit={onSave}>
+      <div className="form-grid">
+        <div className="field full"><label htmlFor="return-purchase">Pembelian *</label><select className="select" id="return-purchase" name="purchase" defaultValue=""><option value="" disabled>Pilih pembelian</option>{purchases.map((item) => <option key={item.id} value={item.id}>{item.supplier} · {rupiah(item.total)}</option>)}</select></div>
+        <div className="field full"><label htmlFor="return-supplier">Supplier *</label><select className="select" id="return-supplier" name="supplier" defaultValue=""><option value="" disabled>Pilih supplier</option>{suppliers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        <div className="field full"><label htmlFor="return-material">Bahan baku *</label><select className="select" id="return-material" name="material" defaultValue=""><option value="" disabled>Pilih bahan</option>{materials.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>)}</select></div>
+        <div className="field"><label htmlFor="return-qty">Kuantitas retur *</label><input className="input" id="return-qty" name="qty" type="number" min="0.01" step="0.01" /></div>
+        <div className="field"><label htmlFor="return-reason">Alasan</label><input className="input" id="return-reason" name="reason" placeholder="Contoh: Barang rusak" /></div>
+        <div className="field full"><label htmlFor="return-notes">Catatan</label><textarea className="textarea" id="return-notes" name="notes" /></div>
+      </div>
+      <ModalFooter onClose={onClose} submitLabel="Simpan retur" />
+    </form>
+  </Modal>;
+}
+
+function CashReconView({ recons, onAdd }: { recons: CashRecon[]; onAdd: () => void }) {
+  return <main className="page">
+    <PageHeading eyebrow="Keuangan" title="Rekonsiliasi kas harian" description="Bandingkan kas fisik aktual dengan catatan sistem untuk kontrol keuangan harian." action={<button className="button button-primary" onClick={onAdd}><Plus size={17} />Input rekonsiliasi</button>} />
+    <div className="page-card-grid">
+      <div className="mini-stat"><span className="mini-stat-label">Rekonsiliasi bulan ini</span><p className="mini-stat-value">{recons.length}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Selisih terbesar</span><p className="mini-stat-value">{recons.length ? shortRupiah(Math.max(...recons.map((r) => Math.abs(r.difference)))) : "Rp 0"}</p></div>
+      <div className="mini-stat"><span className="mini-stat-label">Frekuensi</span><p className="mini-stat-value">{recons.length}x</p></div>
+    </div>
+    <section className="card table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Tanggal</th><th>Kas sistem</th><th>Kas fisik</th><th className="text-right">Selisih</th><th>Status</th><th>Catatan</th></tr></thead><tbody>{recons.map((item) => <tr key={item.id}><td className="table-muted">{dateLabel(item.date)}</td><td>{rupiah(item.systemCash)}</td><td>{rupiah(item.physicalCash)}</td><td className={`text-right ${item.difference !== 0 ? "negative" : "positive"}`}>{item.difference > 0 ? "+" : ""}{rupiah(item.difference)}</td><td><span className={`badge ${item.status === "verified" ? "badge-green" : item.status === "disputed" ? "badge-amber" : "badge-blue"}`}>{item.status === "open" ? "Open" : item.status === "verified" ? "Verified" : "Disputed"}</span></td><td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.notes || "-"}</td></tr>)}{!recons.length && <tr><td colSpan={6} className="table-muted" style={{ textAlign: "center" }}>Belum ada data rekonsiliasi.</td></tr>}</tbody></table></section>
+  </main>;
+}
+
+function CashReconModal({ onClose, onSave }: { onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  return <Modal title="Rekonsiliasi kas" description="Masukkan saldo kas fisik aktual dan bandingkan dengan saldo sistem." onClose={onClose}>
+    <form onSubmit={onSave}>
+      <div className="form-grid">
+        <div className="field"><label htmlFor="recon-date">Tanggal *</label><input className="input" id="recon-date" name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></div>
+        <div className="field"><label htmlFor="recon-system">Kas sistem (Rp) *</label><input className="input" id="recon-system" name="systemCash" type="number" min="0" placeholder="Otomatis dari laporan" /></div>
+        <div className="field full"><label htmlFor="recon-physical">Kas fisik (Rp) *</label><input className="input" id="recon-physical" name="physicalCash" type="number" min="0" placeholder="Hasil hitung manual di laci" /></div>
+        <div className="field full"><label htmlFor="recon-notes">Catatan</label><textarea className="textarea" id="recon-notes" name="notes" placeholder="Contoh: Selisih karena uang bensin kemarin" /></div>
+      </div>
+      <ModalFooter onClose={onClose} submitLabel="Simpan rekonsiliasi" />
+    </form>
+  </Modal>;
 }
