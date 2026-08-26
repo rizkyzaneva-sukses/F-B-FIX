@@ -1434,8 +1434,10 @@ function PanduanTab({ role, openSection, toggle }: { role: "OWNER" | "KASIR"; op
         <Step num={1} title="Catat Pembelian">Pilih supplier, pilih bahan, masukkan kuantitas dan harga beli.</Step>
         <Step num={2} title="Status Pembayaran">Pilih &quot;Lunas&quot; jika langsung bayar, atau &quot;Utang&quot; jika mencicil.</Step>
         <Step num={3} title="Stok Bertambah">Stok bahan baku bertambah otomatis setelah pembelian disimpan.</Step>
-        <Step num={4} title="Bayar Utang">Jika ada utang, buka menu pembelian untuk mencatat pembayaran cicilan.</Step>
-        <Tip>Harga beli terakhir akan digunakan untuk menghitung HPP saat produksi.</Tip>
+        <Step num={4} title="Bayar Utang (Cicil)">Klik tombol &quot;Bayar&quot; pada baris pembelian yang masih ada sisa utang. Isi nominal (maksimal sebesar sisa utang), pilih metode Tunai / Transfer / QRIS, unggah bukti bayar, lalu simpan. Sisa utang dan status berubah otomatis menjadi Sebagian atau Lunas.</Step>
+        <Step num={5} title="Upload Bukti Bayar">Lampirkan foto atau PDF bukti transfer saat mencatat pembayaran. Format JPG, PNG, WebP, atau PDF, maksimal 5MB. Bukti tersimpan dan bisa dibuka lagi sebagai arsip.</Step>
+        <Step num={6} title="Retur ke Supplier">Jika ada bahan rusak atau tidak sesuai, klik &quot;Retur ke supplier&quot;. Pilih pembelian asal, supplier, bahan, dan kuantitas retur, lalu isi alasannya. Stok bahan berkurang otomatis sesuai jumlah yang diretur.</Step>
+        <Tip>Harga beli terakhir akan digunakan untuk menghitung HPP saat produksi. Nilai retur juga dihitung dari harga beli terakhir bahan tersebut.</Tip>
       </Accordion>
 
       <Accordion id="parties" title="Pelanggan & Supplier" icon={<Users size={18} />} isOpen={openSection === "parties"} toggle={toggle}>
@@ -1445,12 +1447,50 @@ function PanduanTab({ role, openSection, toggle }: { role: "OWNER" | "KASIR"; op
         <Tip>Menjaga data kontak tetap rapi membantu pelacakan piutang dan utang.</Tip>
       </Accordion>
 
+      <Accordion id="b2b-orders" title="B2B — Sales Order" icon={<FileText size={18} />} isOpen={openSection === "b2b-orders"} toggle={toggle}>
+        <p>Modul B2B dipakai saat Anda menjual ke reseller, toko, kafe, atau restoran dengan alur pesanan resmi. Alurnya berurutan: <strong>Sales Order &rarr; Surat Jalan &rarr; Invoice &rarr; Aging Piutang</strong>.</p>
+        <Step num={1} title="Buat Sales Order">Klik &quot;Buat sales order&quot;, pilih pelanggan, lalu tentukan termin pembayaran (default 30 hari). Termin ini yang nanti menentukan tanggal jatuh tempo invoice.</Step>
+        <Step num={2} title="Tambah Item">Masukkan produk, kuantitas, dan harga jual per unit. Harga B2B boleh berbeda dari harga kasir. Tambahkan sebanyak yang dipesan.</Step>
+        <Step num={3} title="Status Draft">Pesanan baru berstatus <strong>Draft</strong>. Pada tahap ini pesanan masih bisa dianggap belum final.</Step>
+        <Step num={4} title="Konfirmasi Pesanan">Klik &quot;Konfirmasi&quot; untuk mengubah status menjadi <strong>Confirmed</strong>. Surat jalan hanya bisa dibuat dari sales order yang sudah dikonfirmasi.</Step>
+        <Tip>Isi termin pembayaran sesuai kesepakatan dengan pelanggan. Termin 14 hari untuk pelanggan baru dan 30 hari untuk langganan lama adalah pola yang umum.</Tip>
+      </Accordion>
+
+      <Accordion id="b2b-deliveries" title="B2B — Surat Jalan" icon={<Truck size={18} />} isOpen={openSection === "b2b-deliveries"} toggle={toggle}>
+        <p>Surat jalan adalah dokumen pengiriman barang ke pelanggan B2B.</p>
+        <Step num={1} title="Pilih Sales Order">Klik &quot;Buat surat jalan&quot;, lalu pilih sales order. Hanya pesanan berstatus <strong>Confirmed</strong> yang muncul di daftar.</Step>
+        <Step num={2} title="Isi Data Pengiriman">Masukkan nama driver dan catatan pengiriman jika ada. Item barang tersalin otomatis dari sales order.</Step>
+        <Step num={3} title="Status Pending">Surat jalan yang baru dibuat berstatus <strong>Pending</strong>, artinya barang sedang dalam perjalanan.</Step>
+        <Step num={4} title="Konfirmasi Terkirim">Setelah barang sampai dan diterima pelanggan, klik &quot;Konfirmasi kirim&quot;. Status surat jalan dan sales order sama-sama berubah menjadi <strong>Delivered</strong>.</Step>
+        <Tip>Cetak surat jalan untuk dibawa driver dan ditandatangani pelanggan sebagai bukti serah terima barang.</Tip>
+      </Accordion>
+
+      <Accordion id="b2b-invoices" title="B2B — Invoice" icon={<Receipt size={18} />} isOpen={openSection === "b2b-invoices"} toggle={toggle}>
+        <p>Invoice adalah tagihan resmi yang dikirim ke pelanggan setelah barang diterima.</p>
+        <Step num={1} title="Buat Invoice">Klik &quot;Buat invoice&quot; dan pilih sales order. Hanya pesanan berstatus <strong>Delivered</strong> yang bisa ditagih, sehingga Anda tidak akan menagih barang yang belum terkirim.</Step>
+        <Step num={2} title="Nomor & Jatuh Tempo Otomatis">Nomor invoice dan tanggal jatuh tempo dibuat otomatis oleh sistem. Jatuh tempo dihitung dari tanggal invoice ditambah termin pembayaran di sales order.</Step>
+        <Step num={3} title="Status Tagihan">Invoice dimulai dari <strong>Belum bayar</strong>, lalu berubah menjadi <strong>Sebagian</strong> atau <strong>Lunas</strong> mengikuti pembayaran. Invoice yang lewat jatuh tempo ditandai <strong>Jatuh tempo</strong>.</Step>
+        <Step num={4} title="Terima Pembayaran">Klik &quot;Bayar&quot;, isi nominal, pilih metode, unggah bukti transfer, lalu simpan. Sama seperti piutang, pembayaran boleh dicicil beberapa kali.</Step>
+        <Tip>Kirim invoice ke pelanggan segera setelah barang diterima. Semakin cepat invoice terbit, semakin cepat pula pembayaran masuk.</Tip>
+      </Accordion>
+
+      <Accordion id="b2b-aging" title="B2B — Aging Piutang" icon={<Clock3 size={18} />} isOpen={openSection === "b2b-aging"} toggle={toggle}>
+        <p>Aging piutang mengelompokkan invoice yang belum lunas berdasarkan <strong>umur tagihan</strong>, sehingga Anda tahu mana yang harus ditagih lebih dulu.</p>
+        <Step num={1} title="Kelompok Umur">Tagihan dibagi menjadi empat kelompok: <strong>0&ndash;30 hari</strong>, <strong>31&ndash;60 hari</strong>, <strong>61&ndash;90 hari</strong>, dan <strong>di atas 90 hari</strong>.</Step>
+        <Step num={2} title="Baca Warnanya">Kelompok 0&ndash;30 hari masih wajar. Kelompok 31&ndash;60 hari perlu diingatkan. Kelompok 61 hari ke atas ditandai merah dan harus segera ditindaklanjuti.</Step>
+        <Step num={3} title="Total Outstanding">Angka di bagian atas menunjukkan total seluruh tagihan B2B yang belum tertagih beserta jumlah invoicenya.</Step>
+        <Step num={4} title="Tindak Lanjut">Prioritaskan penagihan dari kelompok umur paling tua, karena semakin lama tagihan menganggur semakin besar risiko tidak tertagih.</Step>
+        <Tip>Jika ada tagihan yang menembus 90 hari, pertimbangkan untuk menghentikan sementara pengiriman baru ke pelanggan tersebut sampai tagihan lama dilunasi.</Tip>
+      </Accordion>
+
       <Accordion id="receivables" title="Piutang" icon={<WalletCards size={18} />} isOpen={openSection === "receivables"} toggle={toggle}>
         <p>Lacak penjualan yang belum dibayar lunas oleh pelanggan.</p>
         <Step num={1} title="Otomatis dari POS">Piutang tercipta otomatis saat Anda memilih metode &quot;Piutang&quot; di kasir.</Step>
-        <Step num={2} title="Catat Pembayaran">Klik piutang yang ada, masukkan nominal pembayaran dari pelanggan.</Step>
-        <Step num={3} title="Jatuh Tempo">Sistem menandai piutang yang sudah jatuh tempo untuk memudahkan penagihan.</Step>
-        <Tip>Pantau piutang jatuh tempo secara rutin untuk menjaga arus kas tetap sehat.</Tip>
+        <Step num={2} title="Terima Pembayaran">Klik tombol &quot;Terima bayar&quot; pada baris piutang. Isi nominal yang dibayar pelanggan, pilih metode Tunai / Transfer / QRIS, lalu simpan.</Step>
+        <Step num={3} title="Bayar Sebagian (Cicilan)">Nominal boleh lebih kecil dari sisa tagihan. Status otomatis menjadi &quot;Sebagian&quot; dan sisa tagihan ikut berkurang, sehingga pelanggan bisa mencicil beberapa kali.</Step>
+        <Step num={4} title="Lampirkan Bukti Bayar">Unggah foto atau PDF bukti transfer dari pelanggan (JPG, PNG, WebP, atau PDF, maksimal 5MB) sebagai arsip jika terjadi selisih catatan di kemudian hari.</Step>
+        <Step num={5} title="Jatuh Tempo">Sistem menandai piutang yang sudah jatuh tempo untuk memudahkan penagihan.</Step>
+        <Tip>Pantau piutang jatuh tempo secara rutin untuk menjaga arus kas tetap sehat. Selalu minta bukti transfer sebelum menandai piutang lunas.</Tip>
       </Accordion>
 
       <Accordion id="expenses" title="Pengeluaran" icon={<CircleDollarSign size={18} />} isOpen={openSection === "expenses"} toggle={toggle}>
@@ -1459,6 +1499,16 @@ function PanduanTab({ role, openSection, toggle }: { role: "OWNER" | "KASIR"; op
         <Step num={2} title="Prive / Tarik Modal">Pencatatan terpisah untuk uang yang diambil pemilik untuk keperluan pribadi.</Step>
         <Step num={3} title="Kategori">Gunakan kategori yang konsisten untuk memudahkan analisis di laporan.</Step>
         <Tip>Pisahkan antara beban operasional dan prive agar laporan laba rugi akurat.</Tip>
+      </Accordion>
+
+      <Accordion id="cash-recon" title="Rekonsiliasi Kas" icon={<ClipboardList size={18} />} isOpen={openSection === "cash-recon"} toggle={toggle}>
+        <p>Rekonsiliasi kas adalah kegiatan mencocokkan <strong>uang fisik di laci</strong> dengan <strong>catatan kas di sistem</strong>. Lakukan setiap tutup toko untuk mendeteksi selisih sedini mungkin.</p>
+        <Step num={1} title="Hitung Uang Fisik">Setelah tutup toko, hitung seluruh uang tunai yang ada di laci kasir.</Step>
+        <Step num={2} title="Input Rekonsiliasi">Klik &quot;Input rekonsiliasi&quot;, isi tanggal, kas menurut sistem, dan kas fisik hasil hitungan manual.</Step>
+        <Step num={3} title="Selisih Otomatis">Sistem menghitung selisih dengan rumus <strong>kas fisik &minus; kas sistem</strong>. Hasil nol berarti kas seimbang, positif berarti uang lebih, negatif berarti uang kurang.</Step>
+        <Step num={4} title="Tulis Penyebabnya">Isi kolom catatan setiap kali ada selisih, misalnya &quot;uang bensin diambil dari laci&quot; atau &quot;kembalian kurang&quot;. Catatan ini yang menyelamatkan Anda saat menelusuri masalah bulan depan.</Step>
+        <Step num={5} title="Status">Setiap rekonsiliasi berstatus <strong>Open</strong>, <strong>Verified</strong>, atau <strong>Disputed</strong>. Gunakan Disputed untuk selisih yang masih diselidiki.</Step>
+        <Tip>Satu tanggal hanya menyimpan satu data rekonsiliasi. Jika Anda input ulang untuk tanggal yang sama, data lama akan digantikan.</Tip>
       </Accordion>
 
       <Accordion id="reports" title="Laporan" icon={<BarChart3 size={18} />} isOpen={openSection === "reports"} toggle={toggle}>
@@ -1515,7 +1565,7 @@ function PanduanTab({ role, openSection, toggle }: { role: "OWNER" | "KASIR"; op
         <p>Beberapa tips untuk kelancaran operasional kasir.</p>
         <div style={{ marginTop: 8 }}><strong>Sebelum shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Pastikan perangkat terhubung ke internet.</li><li>Periksa stok produk yang akan dijual hari ini.</li><li>Hubungi owner jika ada produk yang stoknya habis.</li></ul></div>
         <div style={{ marginTop: 8 }}><strong>Selama shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Gunakan pencarian untuk mempercepat transaksi.</li><li>Konfirmasi jumlah dan total sebelum memproses pembayaran.</li><li>Cetak struk untuk setiap transaksi sebagai bukti.</li></ul></div>
-        <div style={{ marginTop: 8 }}><strong>Akhir shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Logout dari akun kasir Anda.</li><li>Laporkan kendala yang dialami selama shift kepada owner.</li></ul></div>
+        <div style={{ marginTop: 8 }}><strong>Akhir shift:</strong><ul style={{ margin: "4px 0 0 18px" }}><li>Hitung seluruh uang tunai di laci sebelum tutup.</li><li>Serahkan hasil hitungan ke owner untuk dicocokkan dengan catatan sistem (rekonsiliasi kas).</li><li>Laporkan setiap pengeluaran kecil yang diambil dari laci, seperti bensin atau galon, agar tidak muncul sebagai selisih kas.</li><li>Logout dari akun kasir Anda.</li><li>Laporkan kendala yang dialami selama shift kepada owner.</li></ul></div>
       </Accordion>
     </>
   );
@@ -1589,6 +1639,33 @@ function StudiKasusTab({ openSection, toggle }: { openSection: string | null; to
         <Step num={6} title="Laporan Keuangan">Pantau total piutang di laporan neraca untuk memastikan arus kas tetap sehat.</Step>
         <Tip>Jaga rasio piutang terhadap omzet tetap sehat. Jika piutang terlalu besar, pertimbangkan untuk memperketat kebijakan kredit.</Tip>
       </Accordion>
+
+      <Accordion id="case-b2b" title="Studi Kasus 6: Supplier F&amp;B ke Kafe dan Restoran (B2B)" icon={<BriefcaseBusiness size={18} />} isOpen={openSection === "case-b2b"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Bu Maya memproduksi frozen food dan memasoknya ke kafe serta restoran. Pelanggannya memesan lewat WhatsApp, minta barang dikirim dulu, dan membayar 30 hari kemudian. Ia butuh dokumen resmi di setiap tahap.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Daftarkan Pelanggan B2B">Tambahkan setiap kafe dan restoran di menu Pelanggan &amp; Supplier sebagai tipe Pelanggan, lengkap dengan nomor WhatsApp dan alamat pengiriman.</Step>
+        <Step num={2} title="Buat Sales Order">Saat pesanan masuk, buka B2B &rarr; Sales Order. Pilih pelanggan, set termin 30 hari, masukkan produk dan harga khusus B2B. Lalu klik Konfirmasi.</Step>
+        <Step num={3} title="Siapkan Barang">Jika stok belum cukup, jalankan Produksi Batch dulu supaya stok produk jadi mencukupi pesanan.</Step>
+        <Step num={4} title="Buat Surat Jalan">Buka B2B &rarr; Surat Jalan, pilih sales order tadi, isi nama driver. Cetak surat jalan untuk dibawa dan ditandatangani penerima.</Step>
+        <Step num={5} title="Konfirmasi Pengiriman">Setelah driver kembali dan barang diterima, klik &quot;Konfirmasi kirim&quot;. Status pesanan berubah menjadi Delivered.</Step>
+        <Step num={6} title="Terbitkan Invoice">Buka B2B &rarr; Invoice, pilih sales order yang sudah Delivered. Nomor invoice dan jatuh tempo (30 hari) dibuat otomatis. Kirim invoice ke pelanggan.</Step>
+        <Step num={7} title="Terima Pembayaran Bertahap">Kafe membayar 50% dulu. Klik &quot;Bayar&quot; pada invoice, isi nominal separuh, pilih Transfer, unggah bukti transfer. Status menjadi Sebagian. Ulangi saat pelunasan.</Step>
+        <Step num={8} title="Pantau Aging">Buka B2B &rarr; Aging Piutang setiap awal minggu. Tagih lebih dulu pelanggan yang masuk kelompok 31&ndash;60 hari ke atas.</Step>
+        <Tip>Bedakan penjualan B2B dari penjualan kasir. Transaksi eceran tetap lewat POS, sedangkan pesanan besar yang butuh surat jalan dan invoice resmi selalu lewat modul B2B.</Tip>
+      </Accordion>
+
+      <Accordion id="case-kontrol" title="Studi Kasus 7: Kontrol Kas Harian dan Retur Supplier" icon={<ClipboardList size={18} />} isOpen={openSection === "case-kontrol"} toggle={toggle}>
+        <p><strong>Latar Belakang:</strong> Pak Doni punya dua kasir bergantian shift. Uang di laci sering tidak cocok dengan catatan, dan beberapa kali ia menerima bahan baku busuk dari supplier tanpa tahu cara mencatatnya.</p>
+        <div style={{ marginTop: 12 }}><strong>Langkah Implementasi:</strong></div>
+        <Step num={1} title="Rekonsiliasi Setiap Tutup Toko">Setiap malam, hitung uang fisik di laci lalu input di menu Rekonsiliasi Kas bersama angka kas menurut sistem.</Step>
+        <Step num={2} title="Telusuri Selisih">Jika selisih negatif, periksa apakah ada pengeluaran kecil yang belum dicatat, kembalian yang salah, atau transaksi yang lupa diinput di kasir.</Step>
+        <Step num={3} title="Catat Penyebabnya">Tulis penyebab selisih di kolom catatan dan tandai statusnya Disputed jika belum ketemu penyebabnya.</Step>
+        <Step num={4} title="Catat Pengeluaran Kecil">Biasakan mencatat pengeluaran kecil dari laci (bensin, parkir, galon) di menu Pengeluaran supaya kas sistem selalu mencerminkan kondisi riil.</Step>
+        <Step num={5} title="Retur Bahan Rusak">Saat menerima bahan busuk, buka menu Pembelian, klik &quot;Retur ke supplier&quot;, pilih pembelian asal dan bahan yang diretur, isi kuantitas dan alasannya.</Step>
+        <Step num={6} title="Stok Ikut Menyesuaikan">Stok bahan berkurang otomatis sesuai jumlah retur, sehingga HPP produksi berikutnya tidak ikut menghitung bahan yang sebenarnya sudah dikembalikan.</Step>
+        <Step num={7} title="Bayar Utang dengan Bukti">Saat melunasi utang supplier, selalu unggah bukti transfer di form pembayaran agar ada arsip jika supplier mengklaim belum menerima uang.</Step>
+        <Tip>Selisih kas kecil yang dibiarkan setiap hari akan menumpuk jadi angka besar di akhir bulan. Rekonsiliasi harian jauh lebih murah daripada audit bulanan.</Tip>
+      </Accordion>
     </div>
   );
 }
@@ -1656,6 +1733,23 @@ function LaporanTab({ openSection, toggle }: { openSection: string | null; toggl
           <div className="activity-row" style={{ fontWeight: 700 }}><span className="row-main">Total K + E</span><span className="row-side"><span className="badge badge-green">{rupiah(26299600)}</span></span></div>
         </div>
         <Tip>Pastikan Total Aset selalu sama dengan Total Kewajiban + Ekuitas. Jika tidak seimbang, periksa apakah ada transaksi yang belum tercatat.</Tip>
+      </Accordion>
+
+      <Accordion id="lap-aging" title="Laporan Aging Piutang" icon={<Clock3 size={18} />} isOpen={openSection === "lap-aging"} toggle={toggle}>
+        <p>Aging piutang memecah tagihan yang belum lunas berdasarkan <strong>berapa lama tagihan itu menganggur</strong>. Neraca hanya memberi tahu total piutang, sedangkan aging memberi tahu seberapa berbahaya piutang tersebut.</p>
+        <div style={{ margin: "12px 0", padding: "12px 16px", background: "var(--surface)", borderRadius: 10, fontSize: 13 }}>
+          <strong>Rumus:</strong><br />
+          Umur tagihan = Hari ini &minus; Tanggal jatuh tempo invoice
+        </div>
+        <div style={{ marginTop: 12 }}><strong>Contoh pembacaan:</strong></div>
+        <div className="activity-list" style={{ marginTop: 8 }}>
+          <div className="activity-row"><span className="row-main">0&ndash;30 hari <span style={{ color: "var(--muted)", fontSize: 11 }}>· wajar</span></span><span className="row-side"><span className="badge badge-blue">{rupiah(4200000)}</span></span></div>
+          <div className="activity-row"><span className="row-main">31&ndash;60 hari <span style={{ color: "var(--muted)", fontSize: 11 }}>· ingatkan</span></span><span className="row-side"><span className="badge badge-amber">{rupiah(1850000)}</span></span></div>
+          <div className="activity-row"><span className="row-main">61&ndash;90 hari <span style={{ color: "var(--muted)", fontSize: 11 }}>· tagih serius</span></span><span className="row-side"><span className="badge badge-red">{rupiah(920000)}</span></span></div>
+          <div className="activity-row"><span className="row-main">&gt;90 hari <span style={{ color: "var(--muted)", fontSize: 11 }}>· berisiko macet</span></span><span className="row-side"><span className="badge badge-red">{rupiah(430000)}</span></span></div>
+          <div className="activity-row" style={{ fontWeight: 700, fontSize: 15 }}><span className="row-main">Total Outstanding</span><span className="row-side negative">{rupiah(7400000)}</span></div>
+        </div>
+        <Tip>Pada contoh di atas, {rupiah(1350000)} atau sekitar 18% dari total piutang sudah lewat 60 hari. Jika porsi di atas 60 hari melebihi 20%, kebijakan kredit Anda perlu diperketat.</Tip>
       </Accordion>
     </div>
   );
