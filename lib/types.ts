@@ -1,6 +1,4 @@
-import type { ReactNode } from "react";
-
-export type UserRole = "OWNER" | "MANAGER" | "KASIR" | "GUDANG" | "FINANCE" | "B2B_SALES";
+export type UserRole = "OWNER" | "KASIR" | "GUDANG" | "FINANCE";
 
 export type View =
   | "dashboard"

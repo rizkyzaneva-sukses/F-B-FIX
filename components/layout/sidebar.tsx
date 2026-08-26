@@ -28,48 +28,48 @@ export const navSections: NavSection[] = [
   {
     label: "Utama",
     items: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["OWNER", "MANAGER"] },
-      { id: "pos", label: "Kasir POS", icon: ShoppingCart, roles: ["OWNER", "MANAGER", "KASIR"] },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["OWNER", "FINANCE"] },
+      { id: "pos", label: "Kasir POS", icon: ShoppingCart, roles: ["OWNER", "KASIR"] },
     ],
   },
   {
     label: "Operasional & Stok",
-    roles: ["OWNER", "MANAGER", "GUDANG"],
+    roles: ["OWNER", "GUDANG", "KASIR"],
     items: [
-      { id: "products", label: "Produk Jadi", icon: Package, roles: ["OWNER", "MANAGER", "GUDANG"] },
-      { id: "materials", label: "Bahan Baku", icon: Leaf, roles: ["OWNER", "MANAGER", "GUDANG"] },
-      { id: "production", label: "Produksi Batch", icon: Boxes, roles: ["OWNER", "MANAGER", "GUDANG"] },
-      { id: "purchases", label: "Pembelian Bahan", icon: Truck, roles: ["OWNER", "MANAGER", "GUDANG"] },
-      { id: "parties", label: "Kontak Bisnis", icon: Users, roles: ["OWNER", "MANAGER", "B2B_SALES"] },
+      { id: "products", label: "Produk Jadi", icon: Package, roles: ["OWNER", "GUDANG"] },
+      { id: "materials", label: "Bahan Baku", icon: Leaf, roles: ["OWNER", "GUDANG"] },
+      { id: "production", label: "Produksi Batch", icon: Boxes, roles: ["OWNER", "GUDANG"] },
+      { id: "purchases", label: "Pembelian Bahan", icon: Truck, roles: ["OWNER", "GUDANG"] },
+      { id: "parties", label: "Kontak Bisnis", icon: Users, roles: ["OWNER", "KASIR", "GUDANG"] },
     ],
   },
   {
     label: "Keuangan & Kas",
-    roles: ["OWNER", "MANAGER", "FINANCE"],
+    roles: ["OWNER", "FINANCE"],
     items: [
-      { id: "receivables", label: "Piutang Usaha", icon: WalletCards, roles: ["OWNER", "MANAGER", "FINANCE"] },
-      { id: "expenses", label: "Pengeluaran", icon: CircleDollarSign, roles: ["OWNER", "MANAGER", "FINANCE"] },
-      { id: "cash-recon", label: "Rekonsiliasi Kas", icon: ClipboardList, roles: ["OWNER", "MANAGER", "FINANCE"] },
-      { id: "reports", label: "Laporan Keuangan", icon: BarChart3, roles: ["OWNER", "MANAGER", "FINANCE"] },
+      { id: "receivables", label: "Piutang Usaha", icon: WalletCards, roles: ["OWNER", "FINANCE"] },
+      { id: "expenses", label: "Pengeluaran", icon: CircleDollarSign, roles: ["OWNER", "FINANCE"] },
+      { id: "cash-recon", label: "Rekonsiliasi Kas", icon: ClipboardList, roles: ["OWNER", "FINANCE"] },
+      { id: "reports", label: "Laporan Keuangan", icon: BarChart3, roles: ["OWNER", "FINANCE"] },
     ],
   },
   {
     label: "B2B / Grosir",
     collapsible: true,
     defaultOpen: true,
-    roles: ["OWNER", "MANAGER", "B2B_SALES", "FINANCE"],
+    roles: ["OWNER", "KASIR", "FINANCE"],
     items: [
-      { id: "b2b-orders", label: "Sales Order", icon: FileText, roles: ["OWNER", "MANAGER", "B2B_SALES"] },
-      { id: "b2b-deliveries", label: "Surat Jalan", icon: Truck, roles: ["OWNER", "MANAGER", "B2B_SALES"] },
-      { id: "b2b-invoices", label: "Invoice B2B", icon: Receipt, roles: ["OWNER", "MANAGER", "B2B_SALES", "FINANCE"] },
-      { id: "b2b-aging", label: "Aging Piutang", icon: Clock3, roles: ["OWNER", "MANAGER", "B2B_SALES", "FINANCE"] },
+      { id: "b2b-orders", label: "Sales Order", icon: FileText, roles: ["OWNER", "KASIR"] },
+      { id: "b2b-deliveries", label: "Surat Jalan", icon: Truck, roles: ["OWNER", "KASIR"] },
+      { id: "b2b-invoices", label: "Invoice B2B", icon: Receipt, roles: ["OWNER", "FINANCE"] },
+      { id: "b2b-aging", label: "Aging Piutang", icon: Clock3, roles: ["OWNER", "FINANCE"] },
     ],
   },
   {
     label: "Bantuan & Sistem",
     items: [
-      { id: "guide", label: "Panduan", icon: BookOpen, roles: ["OWNER", "MANAGER", "KASIR", "GUDANG", "FINANCE", "B2B_SALES"] },
-      { id: "settings", label: "Pengaturan", icon: Settings, roles: ["OWNER", "KASIR"] },
+      { id: "guide", label: "Panduan", icon: BookOpen, roles: ["OWNER", "KASIR", "GUDANG", "FINANCE"] },
+      { id: "settings", label: "Pengaturan", icon: Settings, roles: ["OWNER"] },
     ],
   },
 ];
@@ -222,15 +222,11 @@ export function Sidebar({
             </strong>
             <span>
               {account.role === "KASIR"
-                ? "Kasir"
-                : account.role === "MANAGER"
-                ? "Manager"
+                ? "Kasir & Sales"
                 : account.role === "GUDANG"
-                ? "Gudang"
+                ? "Gudang & Produksi"
                 : account.role === "FINANCE"
-                ? "Finance"
-                : account.role === "B2B_SALES"
-                ? "B2B Sales"
+                ? "Admin & Finance"
                 : "Owner"}
             </span>
           </div>

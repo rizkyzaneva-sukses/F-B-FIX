@@ -74,7 +74,39 @@ import { SupplierReturnModal } from "@/components/modals/supplier-return-modal";
 import { CashReconModal } from "@/components/modals/cash-recon-modal";
 import { PartialPaymentModal } from "@/components/modals/partial-payment-modal";
 
-const CASHIER_ALLOWED_VIEWS: View[] = ["pos", "guide", "settings"];
+const ROLE_ALLOWED_VIEWS: Record<UserRole, View[]> = {
+  OWNER: [
+    "dashboard",
+    "pos",
+    "products",
+    "materials",
+    "production",
+    "purchases",
+    "parties",
+    "receivables",
+    "expenses",
+    "cash-recon",
+    "reports",
+    "b2b-orders",
+    "b2b-deliveries",
+    "b2b-invoices",
+    "b2b-aging",
+    "guide",
+    "settings",
+  ],
+  KASIR: ["pos", "parties", "b2b-orders", "b2b-deliveries", "guide"],
+  GUDANG: ["products", "materials", "production", "purchases", "parties", "guide"],
+  FINANCE: [
+    "dashboard",
+    "receivables",
+    "expenses",
+    "cash-recon",
+    "reports",
+    "b2b-invoices",
+    "b2b-aging",
+    "guide",
+  ],
+};
 
 export default function Home() {
   const [view, setView] = useState<View>("dashboard");
@@ -141,8 +173,9 @@ export default function Home() {
     setToast({ message, tone });
 
   const navigate = (next: View) => {
-    if (account.role === "KASIR" && !CASHIER_ALLOWED_VIEWS.includes(next)) {
-      notify("Akses menu terbatas untuk kasir.", "error");
+    const allowed = ROLE_ALLOWED_VIEWS[account.role] || ROLE_ALLOWED_VIEWS.OWNER;
+    if (!allowed.includes(next)) {
+      notify("Akses menu terbatas untuk role Anda.", "error");
       return;
     }
     setView(next);
@@ -183,9 +216,9 @@ export default function Home() {
       .then((data) => {
         const role = (data?.role as UserRole) || "OWNER";
         setAccount({ name: String(data?.name || "Owner"), role });
-        if (role === "KASIR") {
-          setView("pos");
-        }
+        if (role === "KASIR") setView("pos");
+        else if (role === "GUDANG") setView("production");
+        else if (role === "FINANCE") setView("dashboard");
       })
       .catch(() => undefined);
 
@@ -1711,6 +1744,7 @@ export default function Home() {
             onSeed={fillDummyData}
             businessProfile={businessProfile}
             onSaveProfile={saveBusinessProfile}
+            plan={plan}
           />
         )}
 

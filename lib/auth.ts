@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 export type Session = JWTPayload & {
   user_id: string;
   business_id: string;
-  role: "OWNER" | "KASIR";
+  role: "OWNER" | "KASIR" | "GUDANG" | "FINANCE";
   name: string;
   email?: string;
 };

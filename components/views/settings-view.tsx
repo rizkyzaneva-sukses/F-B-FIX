@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { PageHeading } from "@/components/ui/page-heading";
 import { CashierModal } from "@/components/modals/cashier-modal";
 import { backendRequest } from "@/lib/client-api";
-import type { BusinessProfile, Toast } from "@/lib/types";
+import type { BusinessProfile, PlanState, Toast, UserRole } from "@/lib/types";
 
 export function SettingsView({
   dark,
@@ -24,6 +24,7 @@ export function SettingsView({
   onSeed,
   businessProfile,
   onSaveProfile,
+  plan,
 }: {
   dark: boolean;
   setDark: (value: boolean) => void;
@@ -32,10 +33,11 @@ export function SettingsView({
   onSeed: () => Promise<void>;
   businessProfile: BusinessProfile;
   onSaveProfile: (profile: BusinessProfile) => Promise<void>;
+  plan: PlanState;
 }) {
   const [busy, setBusy] = useState<"reset" | "seed" | null>(null);
   const [subscription, setSubscription] = useState<{ currentPlan: string; proPrice: number } | null>(null);
-  const [cashiers, setCashiers] = useState<Array<{ id: string; name: string; is_active: boolean }>>([]);
+  const [cashiers, setCashiers] = useState<Array<{ id: string; name: string; role: UserRole; is_active: boolean }>>([]);
   const [showCashierModal, setShowCashierModal] = useState(false);
   const [profileForm, setProfileForm] = useState(businessProfile);
   const [businessId, setBusinessId] = useState("");
@@ -49,7 +51,7 @@ export function SettingsView({
     backendRequest<{ currentPlan: string; proPrice: number }>("/api/subscription")
       .then(setSubscription)
       .catch(() => undefined);
-    backendRequest<Array<{ id: string; name: string; is_active: boolean }>>("/api/cashiers")
+    backendRequest<Array<{ id: string; name: string; role: UserRole; is_active: boolean }>>("/api/cashiers")
       .then(setCashiers)
       .catch(() => undefined);
     backendRequest<{ business_id?: string }>("/api/auth/session")
@@ -270,8 +272,8 @@ export function SettingsView({
           <section className="card card-pad">
             <div className="section-header">
               <div>
-                <h2>Tim Kasir ({cashiers.length})</h2>
-                <p>Kelola kasir & PIN login</p>
+                <h2>Tim & Staff Operasional ({cashiers.length})</h2>
+                <p>Kelola staf, kasir, dan PIN login</p>
               </div>
               <button className="section-link" onClick={() => setShowCashierModal(true)}>
                 Kelola
@@ -283,7 +285,16 @@ export function SettingsView({
                   <div className="avatar">{c.name.slice(0, 2).toUpperCase()}</div>
                   <div className="row-main">
                     <strong>{c.name}</strong>
-                    <span>Kasir &middot; {c.is_active ? "Aktif" : "Nonaktif"}</span>
+                    <span>
+                      {c.role === "KASIR"
+                        ? "Kasir & Sales"
+                        : c.role === "GUDANG"
+                        ? "Gudang & Produksi"
+                        : c.role === "FINANCE"
+                        ? "Admin & Finance"
+                        : "Staff"}{" "}
+                      &middot; {c.is_active ? "Aktif" : "Nonaktif"}
+                    </span>
                   </div>
                   <span
                     className="status-dot"
@@ -292,20 +303,20 @@ export function SettingsView({
                 </div>
               ))
             ) : (
-              <p className="table-muted">Belum ada akun kasir terdaftar.</p>
+              <p className="table-muted">Belum ada akun staff/kasir terdaftar.</p>
             )}
             <button
               className="button button-secondary"
               style={{ width: "100%", marginTop: 12 }}
               onClick={() => setShowCashierModal(true)}
             >
-              + Tambah Kasir Baru
+              + Tambah Staff / Kasir Baru
             </button>
             {businessId && (
               <div className="callout" style={{ marginTop: 12 }}>
                 <QrCode size={17} style={{ flexShrink: 0 }} />
                 <div>
-                  <strong>Tautan Masuk Khusus Kasir</strong>
+                  <strong>Tautan Masuk Khusus Staff & Kasir</strong>
                   <p
                     style={{
                       wordBreak: "break-all",
@@ -320,12 +331,12 @@ export function SettingsView({
                     className="button button-secondary"
                     onClick={() => {
                       navigator.clipboard?.writeText(cashierLoginUrl).then(
-                        () => notify("Tautan kasir berhasil disalin."),
+                        () => notify("Tautan staf berhasil disalin."),
                         () => notify("Gagal menyalin tautan.", "error")
                       );
                     }}
                   >
-                    Salin Tautan Kasir
+                    Salin Tautan Staff
                   </button>
                 </div>
               </div>
@@ -365,11 +376,12 @@ export function SettingsView({
       {showCashierModal && (
         <CashierModal
           cashiers={cashiers}
+          plan={plan}
           onClose={() => setShowCashierModal(false)}
           onSaved={(newCashier) => {
             setCashiers((prev) => [...prev, newCashier]);
             setShowCashierModal(false);
-            notify("Kasir berhasil ditambahkan.");
+            notify("Akun staff berhasil ditambahkan.");
           }}
         />
       )}

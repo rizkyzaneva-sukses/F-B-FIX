@@ -90,7 +90,7 @@ export async function adminToken(): Promise<string> {
 export async function userToken(session: {
   user_id: string;
   business_id: string;
-  role: "OWNER" | "KASIR";
+  role: "OWNER" | "KASIR" | "GUDANG" | "FINANCE";
 }): Promise<string> {
   return new SignJWT({
     role: session.role,

@@ -29,9 +29,9 @@ export async function POST(request: Request) {
 
     const rows = await postgrestJson<Array<{
       id: string; business_id: string; name: string;
-      pin_hash: string; role: "KASIR"; is_active: boolean;
+      pin_hash: string; role: "KASIR" | "GUDANG" | "FINANCE"; is_active: boolean;
     }>>(
-      `/app_users?business_id=eq.${business_id}&role=eq.KASIR&is_active=eq.true&select=id,business_id,name,pin_hash,role,is_active`,
+      `/app_users?business_id=eq.${business_id}&role=neq.OWNER&is_active=eq.true&select=id,business_id,name,pin_hash,role,is_active`,
       {},
       undefined // use admin token to query, then validate PIN server-side
     );
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
     if (!matchedUser) {
       return apiError(
-        `PIN kasir tidak valid. Sisa percobaan: ${limit.remaining - 1}`,
+        `PIN staff/kasir tidak valid. Sisa percobaan: ${limit.remaining - 1}`,
         401,
         "INVALID_PIN"
       );
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     await setSession({
       user_id: matchedUser.id,
       business_id: matchedUser.business_id,
-      role: "KASIR",
+      role: matchedUser.role,
       name: matchedUser.name,
     });
 

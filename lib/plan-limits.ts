@@ -72,15 +72,39 @@ export async function assertCanAddMaterial(businessId: string, token?: string): 
 }
 
 /**
- * Check if a new POS sale can be made within plan limits.
+ * Check if a new staff/cashier account can be created within plan limits.
+ * Free plan: max 1 KASIR, GUDANG and FINANCE are PRO only.
+ * Pro plan: unlimited staff with KASIR, GUDANG, FINANCE roles.
  */
-export async function assertCanMakeSale(businessId: string, token?: string): Promise<void> {
-  const { limits, usage } = await getPlanInfo(businessId, token);
+export async function assertCanAddStaff(
+  businessId: string,
+  roleToAdd: "KASIR" | "GUDANG" | "FINANCE",
+  token?: string
+): Promise<void> {
+  const { limits } = await getPlanInfo(businessId, token);
   if (limits.plan === "PRO") return;
-  if (usage.salesThisMonth >= limits.sales_transaction_limit) {
+
+  if (roleToAdd !== "KASIR") {
     throw Object.assign(
-      new Error(`Batas ${limits.sales_transaction_limit} transaksi bulan ini telah tercapai. Upgrade ke PRO untuk melanjutkan.`),
+      new Error(
+        "Role Gudang dan Finance hanya tersedia untuk paket PRO. Upgrade ke PRO untuk mengaktifkan multi-role tim."
+      ),
+      { status: 403 }
+    );
+  }
+
+  const existingStaffCount = await postgrestCount(
+    `/app_users?business_id=eq.${businessId}&is_active=eq.true&role=neq.OWNER`,
+    token
+  );
+
+  if (existingStaffCount >= 1) {
+    throw Object.assign(
+      new Error(
+        "Paket Free hanya dapat memiliki maksimal 1 akun Kasir. Upgrade ke PRO untuk menambah akun staff dan kasir tanpa batas."
+      ),
       { status: 409 }
     );
   }
 }
+
