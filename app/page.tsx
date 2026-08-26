@@ -722,21 +722,12 @@ export default function Home() {
     notify("Invoice berhasil dibuat.");
   };
 
-  const payB2BInvoice = async (invoiceId: string) => {
+  const openInvoicePayment = (invoiceId: string) => {
     const invoice = b2bInvoices.find((inv) => inv.id === invoiceId);
     if (!invoice) return;
     const remaining = invoice.total_amount - invoice.paid_amount;
-    const value = window.prompt(`Masukkan pembayaran (maks. ${rupiah(remaining)})`, String(remaining));
-    const amount = Number(value);
-    if (!amount || amount <= 0 || amount > remaining) return notify("Nominal pembayaran tidak valid.", "error");
-    if (BACKEND_ENABLED) {
-      try { await backendRequest(`/api/b2b/invoices/${invoiceId}/pay`, { method: "POST", body: JSON.stringify({ amount, payment_method: "TUNAI" }) }); }
-      catch (error) { return notify(error instanceof Error ? error.message : "Pembayaran invoice gagal.", "error"); }
-    }
-    const newPaid = invoice.paid_amount + amount;
-    const newStatus = newPaid >= invoice.total_amount ? "PAID" as const : "PARTIAL" as const;
-    setB2bInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, paid_amount: newPaid, status: newStatus } : inv));
-    notify(`Pembayaran ${rupiah(amount)} dicatat.`);
+    if (remaining <= 0) return;
+    setPartialPayment({ kind: "invoice", id: invoiceId, title: `Invoice ${invoice.invoice_number}`, remaining });
   };
 
   const exportReport = async () => {
@@ -832,15 +823,15 @@ export default function Home() {
         {view === "products" && <ItemList title="Produk Jadi" description="Kelola produk siap jual dan pantau stoknya." items={products} kind="product" onAdd={() => openCreate("product")} onNavigate={navigate} onImport={(file) => importItems(file, "PRODUCT")} onDownloadTemplate={() => downloadItemTemplate("PRODUCT")} />}
         {view === "materials" && <MaterialList materials={materials} onAdd={() => openCreate("material")} onImport={(file) => importItems(file, "RAW_MATERIAL")} onDownloadTemplate={() => downloadItemTemplate("RAW_MATERIAL")} />}
         {view === "production" && <ProductionView batches={batches} products={products} materials={materials} onAdd={() => openCreate("production")} />}
-         {view === "purchases" && <PurchaseView2 purchases={purchases} materials={materials} onAdd={() => openCreate("purchase")} onPay={payPayable} onReturn={() => openCreate("return")} />}
+         {view === "purchases" && <PurchaseView2 purchases={purchases} materials={materials} onAdd={() => openCreate("purchase")} onPay={openPayablePayment} onReturn={() => openCreate("return")} />}
         {view === "parties" && <PartyView parties={parties} onAdd={() => openCreate("party")} onWhatsApp={sendWhatsApp} />}
-        {view === "receivables" && <ReceivableView receivables={receivables} onPay={payReceivable} />}
+        {view === "receivables" && <ReceivableView receivables={receivables} onPay={openReceivablePayment} />}
         {view === "expenses" && <ExpenseView expenses={expenses} onAdd={() => openCreate("expense")} />}
         {view === "cash-recon" && <CashReconView recons={cashRecons} onAdd={() => openCreate("cash-recon")} />}
          {view === "reports" && <ReportView2 expenses={expenses} capitalEntries={capitalEntries} purchases={purchases} receivables={receivables} products={products} sales={sales} exportReport={exportReport} onAddCapital={() => openCreate("capital")} />}
          {view === "b2b-orders" && <B2BOrderView orders={b2bOrders} onAdd={() => openCreate("b2b-order")} onConfirm={confirmB2BOrder} />}
          {view === "b2b-deliveries" && <B2BDeliveryView deliveries={b2bDeliveries} orders={b2bOrders} onAdd={() => openCreate("b2b-delivery")} onDeliver={deliverB2BOrder} />}
-         {view === "b2b-invoices" && <B2BInvoiceView invoices={b2bInvoices} orders={b2bOrders} onAdd={() => openCreate("b2b-invoice")} onPay={payB2BInvoice} />}
+         {view === "b2b-invoices" && <B2BInvoiceView invoices={b2bInvoices} orders={b2bOrders} onAdd={() => openCreate("b2b-invoice")} onPay={openInvoicePayment} />}
          {view === "b2b-aging" && <B2BAgingView aging={b2bAging} />}
          {view === "guide" && <GuideView role={account.role} />}
         {view === "settings" && <SettingsView dark={dark} setDark={setDark} notify={notify} onReset={resetAllData} onSeed={fillDummyData} businessProfile={businessProfile} onSaveProfile={saveBusinessProfile} />}
@@ -860,6 +851,7 @@ export default function Home() {
       {modal === "b2b-invoice" && <B2BInvoiceModal orders={b2bOrders.filter((so) => so.status === "DELIVERED")} onClose={() => setModal(null)} onSave={createB2BInvoice} />}
       {modal === "return" && <SupplierReturnModal purchases={purchases} materials={materials} suppliers={parties.filter((p) => p.type === "SUPPLIER")} onClose={() => setModal(null)} onSave={saveSupplierReturn} />}
       {modal === "cash-recon" && <CashReconModal onClose={() => setModal(null)} onSave={saveCashReconciliation} />}
+      {partialPayment && <PartialPaymentModal target={partialPayment} onClose={() => setPartialPayment(null)} onSave={savePartialPayment} />}
       {toast && <div className={`toast ${toast.tone}`} role="status"><Check size={16} />{toast.message}</div>}
       {mobileSheetOpen && <MobileNavSheet view={view} navigate={(v) => { navigate(v); setMobileSheetOpen(false); }} onClose={() => setMobileSheetOpen(false)} role={account.role} />}
     </div>
@@ -1694,6 +1686,21 @@ function CashReconView({ recons, onAdd }: { recons: CashRecon[]; onAdd: () => vo
     </div>
     <section className="card table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Tanggal</th><th>Kas sistem</th><th>Kas fisik</th><th className="text-right">Selisih</th><th>Status</th><th>Catatan</th></tr></thead><tbody>{recons.map((item) => <tr key={item.id}><td className="table-muted">{dateLabel(item.date)}</td><td>{rupiah(item.systemCash)}</td><td>{rupiah(item.physicalCash)}</td><td className={`text-right ${item.difference !== 0 ? "negative" : "positive"}`}>{item.difference > 0 ? "+" : ""}{rupiah(item.difference)}</td><td><span className={`badge ${item.status === "verified" ? "badge-green" : item.status === "disputed" ? "badge-amber" : "badge-blue"}`}>{item.status === "open" ? "Open" : item.status === "verified" ? "Verified" : "Disputed"}</span></td><td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.notes || "-"}</td></tr>)}{!recons.length && <tr><td colSpan={6} className="table-muted" style={{ textAlign: "center" }}>Belum ada data rekonsiliasi.</td></tr>}</tbody></table></section>
   </main>;
+}
+
+function PartialPaymentModal({ target, onClose, onSave }: { target: PartialPaymentTarget; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
+  const label = target.kind === "payable" ? "Bayar utang supplier" : target.kind === "receivable" ? "Terima pembayaran piutang" : "Terima pembayaran invoice";
+  return <Modal title={label} description={`${target.title} — sisa ${rupiah(target.remaining)}. Boleh dibayar sebagian.`} onClose={onClose}>
+    <form onSubmit={onSave}>
+      <div className="form-grid">
+        <div className="field"><label htmlFor="pay-amount">Nominal (Rp) *</label><input className="input" id="pay-amount" name="amount" type="number" min="1" max={target.remaining} defaultValue={target.remaining} /></div>
+        <div className="field"><label htmlFor="pay-method">Metode *</label><select className="select" id="pay-method" name="paymentMethod" defaultValue="TUNAI"><option value="TUNAI">Tunai</option><option value="TRANSFER">Transfer</option><option value="QRIS">QRIS</option></select></div>
+        <div className="field full"><label htmlFor="pay-proof">Bukti pembayaran</label><input className="input" id="pay-proof" name="proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" /></div>
+        <div className="field full"><label htmlFor="pay-notes">Catatan</label><textarea className="textarea" id="pay-notes" name="notes" placeholder="Contoh: Transfer BCA a/n Budi" /></div>
+      </div>
+      <ModalFooter onClose={onClose} submitLabel="Simpan pembayaran" />
+    </form>
+  </Modal>;
 }
 
 function CashReconModal({ onClose, onSave }: { onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }) {
