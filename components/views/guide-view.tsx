@@ -201,7 +201,7 @@ function PanduanTab({
       >
         <p>Pantau persediaan bahan baku mentah untuk racikan dan kemasan produk.</p>
         <Step num={1} title="Pencatatan Bahan">
-          Daftarkan bahan baku seperti cabai, minyak, botol kaca, bumbu, beserta harga beli terakhir.
+          Daftarkan bahan baku seperti cabai, minyak, botol kaca, bumbu, beserta harga beli terakhir. Untuk banyak item sekaligus: unduh Template, isi kolom nama / satuan / stok_awal / harga_beli_terakhir, lalu Import dari halaman Bahan Baku — bukan dari Katalog Produk.
         </Step>
         <Step num={2} title="Pemotongan Otomatis">
           Stok bahan otomatis berkurang saat produksi batch dan bertambah saat pembelian dicatat.

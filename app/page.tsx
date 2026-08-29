@@ -184,7 +184,7 @@ export default function Home() {
   // Toast auto-dismiss
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), 3200);
+    const timeout = window.setTimeout(() => setToast(null), toast.tone === "error" ? 9000 : 3200);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -1589,15 +1589,20 @@ export default function Home() {
     formData.append("type", kind);
     formData.append("file", file);
     try {
-      const result = await backendRequest<{ imported: number }>("/api/items/import", {
-        method: "POST",
-        body: formData,
-      });
-      notify(
-        `${result.imported} ${
-          kind === "PRODUCT" ? "produk" : "bahan baku"
-        } berhasil diimpor. Memuat ulang data...`
+      const result = await backendRequest<{ imported: number; updated?: number; type?: ImportKind }>(
+        "/api/items/import",
+        {
+          method: "POST",
+          body: formData,
+        }
       );
+      const actualKind = result.type || kind;
+      const label = actualKind === "PRODUCT" ? "produk" : "bahan baku";
+      const parts = [
+        result.imported ? `${result.imported} ${label} baru` : "",
+        result.updated ? `${result.updated} diperbarui` : "",
+      ].filter(Boolean);
+      notify(`${parts.join(", ") || label} berhasil diimpor. Memuat ulang data...`);
       window.setTimeout(() => window.location.reload(), 700);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Import file gagal.", "error");

@@ -47,6 +47,7 @@ export function MaterialsView({
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) onImport(file);
+                  e.target.value = "";
                 }}
               />
             </label>

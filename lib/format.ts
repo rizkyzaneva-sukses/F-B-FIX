@@ -43,7 +43,7 @@ export const defaultPlan: PlanState = {
   name: "FREE",
   salesLimit: 50,
   productLimit: 30,
-  materialLimit: 10,
+  materialLimit: 50,
 };
 
 export const defaultBusinessProfile: BusinessProfile = {
@@ -69,6 +69,7 @@ export function downloadItemTemplate(kind: ImportKind) {
       : [
           {
             nama: "Cabai rawit merah",
+            kategori: "Bahan Utama",
             satuan: "kg",
             stok_awal: 0,
             harga_beli_terakhir: 68000,

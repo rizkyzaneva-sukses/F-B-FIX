@@ -48,7 +48,7 @@ export async function GET() {
       limits: {
         salesLimit: biz?.sales_transaction_limit || 50,
         productLimit: biz?.product_limit || 30,
-        materialLimit: biz?.raw_material_limit || 10,
+        materialLimit: biz?.raw_material_limit || 50,
       },
       subscription: sub
         ? {

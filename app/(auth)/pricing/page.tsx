@@ -7,7 +7,7 @@ import { backendRequest } from "@/lib/client-api";
 const freeFeatures = [
   "50 transaksi POS/bulan",
   "30 produk jadi",
-  "10 bahan baku",
+  "50 bahan baku",
   "Dashboard laba rugi",
   "Cetak struk thermal",
   "1 akun kasir",
