@@ -1,5 +1,4 @@
 import { postgrestJson, postgrestCount } from "@/lib/postgrest";
-import { isSingleTenant } from "@/lib/single-tenant";
 
 export interface PlanLimits {
   plan: "FREE" | "PRO";
@@ -48,7 +47,6 @@ export async function getPlanInfo(
  * Check if a new product can be added within plan limits.
  */
 export async function assertCanAddProduct(businessId: string, token?: string): Promise<void> {
-  if (isSingleTenant()) return;
   const { limits, usage } = await getPlanInfo(businessId, token);
   if (limits.plan === "PRO") return;
   if (usage.activeProducts >= limits.product_limit) {
@@ -63,7 +61,6 @@ export async function assertCanAddProduct(businessId: string, token?: string): P
  * Check if a new raw material can be added within plan limits.
  */
 export async function assertCanAddMaterial(businessId: string, token?: string): Promise<void> {
-  if (isSingleTenant()) return;
   const { limits, usage } = await getPlanInfo(businessId, token);
   if (limits.plan === "PRO") return;
   if (usage.activeMaterials >= limits.raw_material_limit) {
@@ -84,7 +81,6 @@ export async function assertCanAddStaff(
   roleToAdd: "KASIR" | "GUDANG" | "FINANCE",
   token?: string
 ): Promise<void> {
-  if (isSingleTenant()) return;
   const { limits } = await getPlanInfo(businessId, token);
   if (limits.plan === "PRO") return;
 

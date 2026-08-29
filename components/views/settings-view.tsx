@@ -25,7 +25,6 @@ export function SettingsView({
   businessProfile,
   onSaveProfile,
   plan,
-  singleTenant = false,
 }: {
   dark: boolean;
   setDark: (value: boolean) => void;
@@ -35,7 +34,6 @@ export function SettingsView({
   businessProfile: BusinessProfile;
   onSaveProfile: (profile: BusinessProfile) => Promise<void>;
   plan: PlanState;
-  singleTenant?: boolean;
 }) {
   const [busy, setBusy] = useState<"reset" | "seed" | null>(null);
   const [subscription, setSubscription] = useState<{ currentPlan: string; proPrice: number } | null>(null);
@@ -50,18 +48,16 @@ export function SettingsView({
   }, [businessProfile]);
 
   useEffect(() => {
-    if (!singleTenant) {
-      backendRequest<{ currentPlan: string; proPrice: number }>("/api/subscription")
-        .then(setSubscription)
-        .catch(() => undefined);
-    }
+    backendRequest<{ currentPlan: string; proPrice: number }>("/api/subscription")
+      .then(setSubscription)
+      .catch(() => undefined);
     backendRequest<Array<{ id: string; name: string; role: UserRole; is_active: boolean }>>("/api/cashiers")
       .then(setCashiers)
       .catch(() => undefined);
     backendRequest<{ business_id?: string }>("/api/auth/session")
       .then((data) => setBusinessId(String(data?.business_id || "")))
       .catch(() => undefined);
-  }, [singleTenant]);
+  }, []);
 
   const runTrialAction = async (kind: "reset" | "seed", action: () => Promise<void>) => {
     setBusy(kind);
@@ -94,11 +90,7 @@ export function SettingsView({
       <PageHeading
         eyebrow="Workspace"
         title="Pengaturan Aplikasi"
-        description={
-          singleTenant
-            ? "Atur identitas usaha, tim kasir, dan printer thermal."
-            : "Atur identitas usaha, tim kasir, printer thermal, dan paket langganan."
-        }
+        description="Atur identitas usaha, tim kasir, printer thermal, dan paket langganan."
         action={
           <button
             className="button button-primary"
@@ -112,7 +104,7 @@ export function SettingsView({
       />
 
       <div className="split-grid">
-        {!singleTenant && <section className="card card-pad">
+        <section className="card card-pad">
           <div className="section-header">
             <div>
               <h2>Paket Langganan</h2>
@@ -151,7 +143,7 @@ export function SettingsView({
               </a>
             </>
           )}
-        </section>}
+        </section>
 
         <section className="card card-pad">
           <div className="section-header">

@@ -1,19 +1,13 @@
 {
   "name": "dapurkasir",
-  "version": "1.4.0",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "db:setup": "node scripts/setup-local-db.mjs",
-    "db:migrate": "node scripts/migrate.mjs",
-    "db:backup": "node scripts/backup-client.mjs",
-    "postgrest": "node scripts/start-postgrest.mjs",
-    "provision": "node scripts/provision-client.mjs",
-    "release:all": "node scripts/release-all.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@types/node": "^22.10.2",

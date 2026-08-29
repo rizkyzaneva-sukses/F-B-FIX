@@ -22,7 +22,6 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   poweredByHeader: false,
-  serverExternalPackages: ["bcryptjs"],
   async headers() {
     return [
       {

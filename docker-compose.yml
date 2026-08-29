@@ -24,14 +24,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./db:/db:ro
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in EasyPanel}
-      PGHOST: postgres
-      PGUSER: ${POSTGRES_USER:-dapurkasir}
-      PGDATABASE: ${POSTGRES_DB:-dapurkasir}
-    entrypoint: ["sh", "/db/migrate.sh"]
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        find /migrations -name '*.sql' | sort |
+        xargs -I FILE psql -v ON_ERROR_STOP=1 --echo-errors
+        -h postgres -U ${POSTGRES_USER:-dapurkasir} -d ${POSTGRES_DB:-dapurkasir} -f FILE
 
   postgrest:
     image: postgrest/postgrest:v12.2.12
@@ -58,7 +60,6 @@ services:
       args:
         NEXT_PUBLIC_BACKEND_ENABLED: "true"
         NEXT_PUBLIC_TRIAL_TOOLS: ${TRIAL_TOOLS_ENABLED:-true}
-        NEXT_PUBLIC_SINGLE_TENANT: ${SINGLE_TENANT:-true}
     restart: unless-stopped
     depends_on:
       - postgrest
@@ -79,12 +80,6 @@ services:
       MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@dapurkasir.com}
       TRIAL_TOOLS_ENABLED: ${TRIAL_TOOLS_ENABLED:-true}
-      APP_VERSION: ${APP_VERSION:-1.4.0}
-      SINGLE_TENANT: ${SINGLE_TENANT:-true}
-      OWNER_EMAIL: ${OWNER_EMAIL:-}
-      OWNER_PASSWORD: ${OWNER_PASSWORD:-}
-      OWNER_NAME: ${OWNER_NAME:-Owner}
-      BUSINESS_NAME: ${BUSINESS_NAME:-}
     ports:
       - "${APP_PORT:-3000}:3000"
     healthcheck:

@@ -164,14 +164,7 @@ export default function Home() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [businessName, setBusinessName] = useState("DapurKasir");
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile>(defaultBusinessProfile);
-  const [plan, setPlan] = useState<PlanState>(
-    process.env.NEXT_PUBLIC_SINGLE_TENANT === "true"
-      ? { name: "PRO", salesLimit: 0, productLimit: 0, materialLimit: 0 }
-      : defaultPlan
-  );
-  const [singleTenant, setSingleTenant] = useState(
-    process.env.NEXT_PUBLIC_SINGLE_TENANT === "true"
-  );
+  const [plan, setPlan] = useState<PlanState>(defaultPlan);
   const [account, setAccount] = useState<{ name: string; role: UserRole }>({
     name: "Owner",
     role: "OWNER",
@@ -259,14 +252,10 @@ export default function Home() {
   // Load all initial data from backend
   useEffect(() => {
     // Session
-    backendRequest<{ name?: string; role?: string; single_tenant?: boolean }>("/api/auth/session")
+    backendRequest<{ name?: string; role?: string }>("/api/auth/session")
       .then((data) => {
         const role = (data?.role as UserRole) || "OWNER";
         setAccount({ name: String(data?.name || "Owner"), role });
-        if (typeof data.single_tenant === "boolean") setSingleTenant(data.single_tenant);
-        if (data.single_tenant) {
-          setPlan({ name: "PRO", salesLimit: 0, productLimit: 0, materialLimit: 0 });
-        }
         if (role === "KASIR") setView("pos");
         else if (role === "GUDANG") setView("production");
         else if (role === "FINANCE") setView("dashboard");
@@ -281,21 +270,20 @@ export default function Home() {
       })
       .catch(() => undefined);
 
-    if (process.env.NEXT_PUBLIC_SINGLE_TENANT !== "true") {
-      backendRequest<{
-        currentPlan: string;
-        limits: { salesLimit: number; productLimit: number; materialLimit: number };
-      }>("/api/subscription")
-        .then((data) => {
-          setPlan({
-            name: data.currentPlan === "PRO" ? "PRO" : "FREE",
-            salesLimit: data.limits.salesLimit,
-            productLimit: data.limits.productLimit,
-            materialLimit: data.limits.materialLimit,
-          });
-        })
-        .catch(() => undefined);
-    }
+    // Subscription & Plan Limits
+    backendRequest<{
+      currentPlan: string;
+      limits: { salesLimit: number; productLimit: number; materialLimit: number };
+    }>("/api/subscription")
+      .then((data) => {
+        setPlan({
+          name: data.currentPlan === "PRO" ? "PRO" : "FREE",
+          salesLimit: data.limits.salesLimit,
+          productLimit: data.limits.productLimit,
+          materialLimit: data.limits.materialLimit,
+        });
+      })
+      .catch(() => undefined);
 
     // Bootstrap general business data
     backendRequest<{
@@ -1663,7 +1651,6 @@ export default function Home() {
         salesCount={salesCount}
         plan={plan}
         account={account}
-        singleTenant={singleTenant}
       />
 
       <div className="main-area">
@@ -1817,7 +1804,6 @@ export default function Home() {
             businessProfile={businessProfile}
             onSaveProfile={saveBusinessProfile}
             plan={plan}
-            singleTenant={singleTenant}
           />
         )}
 

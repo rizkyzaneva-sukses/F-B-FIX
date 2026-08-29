@@ -16,24 +16,9 @@ POSTGRES_DB=dapurkasir
 POSTGRES_USER=dapurkasir
 POSTGRES_PASSWORD=gunakan-password-random-panjang
 POSTGREST_JWT_SECRET=gunakan-secret-random-minimal-32-karakter
-SESSION_SECRET=gunakan-secret-lain-minimal-32-karakter
-APP_URL=https://klien.domainkamu.com
+APP_URL=https://kasir.domainkamu.com
 APP_PORT=3000
-APP_VERSION=1.4.0
-SINGLE_TENANT=true
-OWNER_EMAIL=owner@klien.com
-OWNER_PASSWORD=password-awal-minimal-8
-OWNER_NAME=Owner
-BUSINESS_NAME=Nama Toko Klien
 ```
-
-Jangan pakai generator secret manual. Jalankan:
-
-```bash
-node scripts/provision-client.mjs --name "Nama Toko" --domain klien.domainkamu.com --email owner@klien.com
-```
-
-Berkas `clients/<id>.env` siap tempel. `SESSION_SECRET` dan `POSTGREST_JWT_SECRET` **harus berbeda**.
 
 `POSTGREST_JWT_SECRET` harus sama untuk PostgREST dan service web. Jangan masukkan secret JWT ke variable yang diawali `NEXT_PUBLIC_`.
 
@@ -45,7 +30,7 @@ Service `postgrest` wajib jalan dengan `PGRST_JWT_ROLE_CLAIM_KEY=.db_role` (suda
 
 1. Arahkan domain ke service `web` pada port container `3000`.
 2. Aktifkan HTTPS dari EasyPanel.
-3. Health check aplikasi: `GET /api/health` — response berisi `version` (tag rilis) dan `last_migration`. Rilis belum selesai sampai semua klon melaporkan versi yang sama.
+3. Health check aplikasi: `GET /api/health`.
 4. PostgREST cukup internal dan tidak perlu diekspos ke internet.
 
 Jika EasyPanel menampilkan **Service is not reachable** tetapi container `web` hijau, cek log `web`. Log Next.js harus menampilkan `Local: http://...:3000` atau `Network: http://...:3000`. Kalau yang muncul port `80`, berarti runtime environment menimpa port Next.js. Compose ini sudah memaksa `PORT=3000` dan `HOSTNAME=0.0.0.0`; lakukan rebuild/redeploy agar image dan container baru memakai konfigurasi tersebut.
@@ -81,51 +66,14 @@ TRIAL_TOOLS_ENABLED=false
 
 Variable itu mematikan API (`/api/dev/seed`, `/api/dev/reset`) sekaligus menyembunyikan kartunya dari UI (lewat build arg `NEXT_PUBLIC_TRIAL_TOOLS`), jadi service `web` perlu di-rebuild setelah diubah.
 
-## 6. Alur penggunaan (satu toko per klon)
+## 6. Alur penggunaan
 
-1. Deploy. Service `migrate` jalan, lalu `web` bootstrap toko + owner dari env.
-2. Buka domain klien → halaman `/login` (bukan `/register` — itu 404).
-3. Login dengan `OWNER_EMAIL` / `OWNER_PASSWORD`. Minta klien ganti password.
+1. Buka `/register` untuk membuat owner dan bisnis pertama.
+2. Login melalui `/login`.
    Untuk kasir: buka **Pengaturan → Tim kasir**, tambahkan kasir dengan PIN 6 angka, lalu salin **tautan masuk kasir** dan buka di perangkat kasir. Perangkat itu akan mengingat kode tokonya, jadi kasir cukup memasukkan PIN.
-4. Buat produk, bahan baku, supplier, dan pelanggan.
-5. Buat batch produksi.
-6. Jalankan transaksi dari menu Kasir POS.
-
-`/pricing`, `/admin`, dan menu upgrade **sengaja hilang**. Klien bayar per instalasi, bukan paket FREE/PRO di dalam aplikasi.
-
-## 8. Klien baru (< 15 menit)
-
-1. `node scripts/provision-client.mjs --name ... --domain ... --email ...`
-2. EasyPanel → Create App Compose → nama `dapurkasir-<klien>`
-3. Tempel env, arahkan domain, deploy
-4. Cek `GET /api/health` → `version` + `last_migration` + `business_count: 1`
-5. Kirim kredensial, catat klien di `clients.json` (jangan di-commit)
-
-## 9. Rilis ke semua klon
-
-Build **satu** image, tag semver (`v1.4.0`), jangan `latest`.
-
-```bash
-node scripts/release-all.mjs --version 1.4.0
-```
-
-Skrip memanggil webhook tiap klien lalu menunggu `/api/health` sampai versinya sama. Yang gagal dilaporkan — rilis belum selesai sampai semua hijau.
-
-## 10. Backup & restore per klien
-
-Di dalam klon (atau mesin yang bisa `pg_dump` ke database klon itu):
-
-```bash
-node scripts/backup-client.mjs --retention 30
-```
-
-Restore satu klien tidak menyentuh klien lain — dump-nya memang database terpisah.
-
-```bash
-pg_restore --clean --if-exists -d dapurkasir backups/dapurkasir-YYYY-MM-DD.dump
-```
-
-Uji restore beneran minimal sekali sebelum klien kedua masuk.
+3. Buat produk, bahan baku, supplier, dan pelanggan.
+4. Buat batch produksi.
+5. Jalankan transaksi dari menu Kasir POS.
 
 ## 7. Catatan keamanan
 
