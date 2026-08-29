@@ -827,7 +827,7 @@ export default function Home() {
     const existing = parties.find(
       (p) => p.type === type && p.name.toLowerCase() === cleanName.toLowerCase()
     );
-    if (existing) return existing.name;
+    if (existing) return existing;
 
     let id = `pt-${Date.now()}`;
     try {
@@ -847,18 +847,16 @@ export default function Home() {
       return null;
     }
 
-    setParties((current) => [
-      {
-        id,
-        name: cleanName,
-        type,
-        phone: details.phone || "",
-        address: details.address || "",
-        creditLimit: details.creditLimit || 0,
-      },
-      ...current,
-    ]);
-    return cleanName;
+    const party: Party = {
+      id,
+      name: cleanName,
+      type,
+      phone: details.phone || "",
+      address: details.address || "",
+      creditLimit: details.creditLimit || 0,
+    };
+    setParties((current) => [party, ...current]);
+    return party;
   };
 
   const saveParty = async (event: FormEvent<HTMLFormElement>) => {
@@ -1200,36 +1198,45 @@ export default function Home() {
   const saveB2BOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const customerId = String(form.get("customer") || "");
+    const customerName = String(form.get("customer") || "").trim();
     const terms = Number(form.get("paymentTerms") || 30);
     const notes = String(form.get("notes") || "");
     const itemIds = form.getAll("itemId").map(String);
     const itemQtys = form.getAll("itemQty").map(Number);
     const itemPrices = form.getAll("itemPrice").map(Number);
 
-    if (!customerId) return notify("Pilih pelanggan.", "error");
+    if (!customerName) return notify("Pilih atau isi nama pelanggan.", "error");
     const items = itemIds
       .map((id, i) => ({ item_id: id, qty: itemQtys[i], unit_price: itemPrices[i] }))
       .filter((it) => it.item_id && it.qty > 0);
     if (!items.length) return notify("Tambah minimal satu item.", "error");
 
+    let customer = parties.find(
+      (p) => p.type === "CUSTOMER" && p.name.toLowerCase() === customerName.toLowerCase()
+    );
+    if (!customer) {
+      const created = await createParty(customerName, "CUSTOMER");
+      if (!created) return;
+      customer = created;
+    }
+
     try {
       const result = await backendRequest<{ id?: string }>("/api/b2b/sales-orders", {
         method: "POST",
         body: JSON.stringify({
-          customer_id: customerId,
+          customer_id: customer.id,
+          customer_name: customer.name,
           payment_terms_days: terms,
           notes,
           items,
         }),
       });
       const soId = result?.id || `so-${Date.now()}`;
-      const customer = parties.find((p) => p.id === customerId);
       const newOrder: SalesOrder = {
         id: soId,
-        customer_id: customerId,
-        customer_name: customer?.name || "",
-        customer_phone: customer?.phone || "",
+        customer_id: customer.id,
+        customer_name: customer.name,
+        customer_phone: customer.phone || "",
         order_date: new Date().toISOString().slice(0, 10),
         status: "DRAFT",
         payment_terms_days: terms,
@@ -1777,7 +1784,7 @@ export default function Home() {
         <PurchaseModal
           materials={materials}
           suppliers={parties.filter((item) => item.type === "SUPPLIER").map((item) => item.name)}
-          onCreateSupplier={(name) => createParty(name, "SUPPLIER")}
+          onCreateSupplier={async (name) => (await createParty(name, "SUPPLIER"))?.name ?? null}
           onClose={() => setModal(null)}
           onSave={savePurchase}
         />
@@ -1790,7 +1797,7 @@ export default function Home() {
         <PaymentModal
           total={cartTotal}
           customers={parties.filter((item) => item.type === "CUSTOMER").map((item) => item.name)}
-          onCreateCustomer={(name) => createParty(name, "CUSTOMER")}
+          onCreateCustomer={async (name) => (await createParty(name, "CUSTOMER"))?.name ?? null}
           onClose={() => setModal(null)}
           onPay={handlePayment}
         />
@@ -1809,6 +1816,7 @@ export default function Home() {
         <B2BOrderModal
           customers={parties.filter((p) => p.type === "CUSTOMER")}
           products={products}
+          onCreateCustomer={async (name) => (await createParty(name, "CUSTOMER"))?.name ?? null}
           onClose={() => setModal(null)}
           onSave={saveB2BOrder}
         />

@@ -6,15 +6,31 @@ import type { Party, Product } from "@/lib/types";
 export function B2BOrderModal({
   customers,
   products,
+  onCreateCustomer,
   onClose,
   onSave,
 }: {
   customers: Party[];
   products: Product[];
+  onCreateCustomer: (name: string) => Promise<string | null>;
   onClose: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const [rows, setRows] = useState([0]);
+  const [customer, setCustomer] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const isExisting = customers.some(
+    (item) => item.name.toLowerCase() === customer.trim().toLowerCase()
+  );
+
+  const createCustomer = async () => {
+    if (!customer.trim()) return;
+    setCreating(true);
+    const name = await onCreateCustomer(customer);
+    if (name) setCustomer(name);
+    setCreating(false);
+  };
 
   return (
     <Modal
@@ -27,16 +43,40 @@ export function B2BOrderModal({
         <div className="form-grid">
           <div className="field full">
             <label htmlFor="so-customer">Pelanggan Bisnis *</label>
-            <select className="select" id="so-customer" name="customer" defaultValue="" required>
-              <option value="" disabled>
-                Pilih pelanggan
-              </option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.phone ? `(${c.phone})` : ""}
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <input
+                className="input"
+                id="so-customer"
+                name="customer"
+                value={customer}
+                onChange={(event) => setCustomer(event.target.value)}
+                list="so-customer-options"
+                placeholder="Pilih atau ketik nama pelanggan baru"
+                autoComplete="off"
+                required
+                style={{ flex: 1, minWidth: 0, width: "auto" }}
+              />
+              <button
+                type="button"
+                className="button button-secondary"
+                style={{ flexShrink: 0 }}
+                disabled={creating || !customer.trim() || isExisting}
+                onClick={createCustomer}
+              >
+                {creating ? "Menyimpan..." : "Simpan Baru"}
+              </button>
+            </div>
+            <datalist id="so-customer-options">
+              {customers.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.phone ? item.phone : ""}
                 </option>
               ))}
-            </select>
+            </datalist>
+            <p className="form-help">
+              Jika pelanggan belum ada di daftar, ketik namanya lalu klik Simpan Baru — atau
+              langsung simpan sales order, pelanggan baru akan tercatat otomatis.
+            </p>
           </div>
 
           <div className="field">
