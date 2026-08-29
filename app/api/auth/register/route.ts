@@ -4,11 +4,16 @@ import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
 import { setSession } from "@/lib/auth";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
+import { isSingleTenant } from "@/lib/single-tenant";
 
 const MAX_REGISTRATIONS_PER_IP = 5;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 export async function POST(request: Request) {
+  if (isSingleTenant()) {
+    return apiError("Tidak tersedia pada instalasi toko tunggal.", 404, "NOT_FOUND");
+  }
+
   try {
     const body = (await request.json()) as {
       email?: string;
@@ -59,6 +64,9 @@ export async function POST(request: Request) {
       const message = error instanceof Error ? error.message : "";
       if (message.includes("sudah terdaftar")) {
         return apiError("Email sudah terdaftar.", 422, "EMAIL_EXISTS");
+      }
+      if (message.includes("hanya untuk satu toko")) {
+        return apiError(message, 409, "SINGLE_TENANT");
       }
       throw error;
     }

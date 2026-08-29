@@ -5,6 +5,10 @@ node_modules
 *.log
 tsconfig.tsbuildinfo
 data/
+clients.json
+clients/*.env
+backups/
+tools/
 
 # Repo memakai npm (package-lock.json) untuk build Docker. Lockfile pnpm lokal tidak
 # boleh ikut ter-commit: Next.js akan mendeteksi pnpm sebagai package manager lalu

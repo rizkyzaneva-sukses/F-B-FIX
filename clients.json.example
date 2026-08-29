@@ -1,0 +1,13 @@
+{
+  "appVersion": "1.4.0",
+  "clients": [
+    {
+      "id": "contoh-toko",
+      "name": "Contoh Toko",
+      "domain": "https://contoh-toko.maulanacorp.my.id",
+      "easypanelWebhook": "https://panel.example.com/api/deploy/webhook/XXXX",
+      "ownerEmail": "owner@contoh.com",
+      "createdAt": "2026-08-29T00:00:00.000Z"
+    }
+  ]
+}

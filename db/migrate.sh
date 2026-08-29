@@ -1,35 +1,44 @@
 #!/bin/sh
-# Apply every migration in order.
+# Apply every *.sql migration in filename order, then record it in schema_migrations.
 #
-# For deployments that do NOT use docker-compose.yml (e.g. separate EasyPanel services),
-# where the one-shot `migrate` service never runs. Open a terminal on the web container
-# and run:
+# EasyPanel / docker-compose: service `migrate` menjalankan skrip ini tiap deploy.
+# Manual dari container web:
+#   DATABASE_URL='postgres://user:pass@host:5432/db' sh db/migrate.sh
 #
-#   sh db/migrate.sh
+# Boleh juga pakai variabel pecahan (yang dipakai docker-compose):
+#   PGHOST PGUSER PGPASSWORD PGDATABASE
 #
-# Needs DATABASE_URL, e.g.
-#   postgres://user:pass%40word@creative_fnb-db:5432/fnb?sslmode=disable
-# A literal @ in the password must be written as %40, otherwise the URL is unparseable.
-#
-# Every migration is written to be re-runnable, so running this repeatedly is safe.
+# Setiap migrasi idempotent, jadi aman diulang.
 set -e
 
-if [ -z "$DATABASE_URL" ]; then
-  echo "DATABASE_URL belum diisi." >&2
-  echo "Contoh: DATABASE_URL='postgres://user:pass%40word@host:5432/db?sslmode=disable' sh db/migrate.sh" >&2
-  exit 1
-fi
+psql_apply() {
+  if [ -n "$DATABASE_URL" ]; then
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --echo-errors "$@"
+  else
+    if [ -z "$PGHOST" ] && [ -z "$PGUSER" ]; then
+      echo "DATABASE_URL atau PGHOST/PGUSER/PGDATABASE belum diisi." >&2
+      echo "Contoh: DATABASE_URL='postgres://user:pass@host:5432/db' sh db/migrate.sh" >&2
+      exit 1
+    fi
+    psql -v ON_ERROR_STOP=1 --echo-errors "$@"
+  fi
+}
 
-DIR="$(dirname "$0")/migrations"
+DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)/migrations"
 
 if [ ! -d "$DIR" ]; then
   echo "Folder migrasi tidak ditemukan: $DIR" >&2
   exit 1
 fi
 
+psql_apply -c "create table if not exists schema_migrations (filename text primary key, applied_at timestamptz not null default now());"
+
 for file in "$DIR"/*.sql; do
-  echo "==> menerapkan $(basename "$file")"
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --echo-errors -f "$file"
+  [ -f "$file" ] || continue
+  name="$(basename "$file")"
+  echo "==> menerapkan $name"
+  psql_apply -f "$file"
+  psql_apply -c "insert into schema_migrations (filename) values ('$name') on conflict (filename) do nothing;"
 done
 
 echo "==> semua migrasi selesai"

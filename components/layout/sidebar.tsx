@@ -81,6 +81,7 @@ export function Sidebar({
   salesCount,
   plan,
   account,
+  singleTenant = false,
 }: {
   view: View;
   navigate: (view: View) => void;
@@ -88,6 +89,7 @@ export function Sidebar({
   salesCount: number;
   plan: PlanState;
   account: { name: string; role: UserRole };
+  singleTenant?: boolean;
 }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     "B2B / Grosir": true,
@@ -187,7 +189,7 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-bottom">
-        {account.role === "OWNER" && (
+        {account.role === "OWNER" && !singleTenant && (
           <div className="plan-card">
             {plan.name === "PRO" ? (
               <>

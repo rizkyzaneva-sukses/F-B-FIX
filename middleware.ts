@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose/jwt/verify";
 import type { JWTPayload } from "jose";
+import { isSingleTenant, isSingleTenantBlockedPath } from "@/lib/single-tenant";
 
 // Pages and API routes reachable without a session.
 const PUBLIC_ROUTES = [
@@ -88,6 +89,22 @@ export async function middleware(request: NextRequest) {
 
   if (STATIC_PATHS.some((path) => pathname.startsWith(path))) {
     return NextResponse.next();
+  }
+
+  if (isSingleTenant() && isSingleTenantBlockedPath(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "NOT_FOUND",
+            message: "Tidak tersedia pada instalasi toko tunggal.",
+          },
+        },
+        { status: 404 }
+      );
+    }
+    return NextResponse.rewrite(new URL("/not-found", request.url));
   }
 
   const isWebhook = pathname.startsWith(WEBHOOK_PREFIX);
