@@ -2,7 +2,18 @@ import { apiData, apiError } from "@/lib/api-response";
 import { postgrestJson } from "@/lib/postgrest";
 import { requireSession } from "@/lib/route-auth";
 
+export const dynamic = "force-dynamic";
+
 const MAX_ROWS = 200;
+
+async function optionalQuery<T>(label: string, query: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await query;
+  } catch (error) {
+    console.error(`[bootstrap] ${label} skipped:`, error);
+    return fallback;
+  }
+}
 
 export async function GET() {
   const auth = await requireSession();
@@ -19,11 +30,11 @@ export async function GET() {
       expenses,
       purchases,
       batches,
+      productionOutputs,
       payables,
       capitalEntries,
       sales,
       saleItems,
-      productionOutputs,
       supplierReturns,
       cashReconciliations,
     ] = await Promise.all([
@@ -67,15 +78,19 @@ export async function GET() {
         {},
         auth.token
       ),
-      postgrestJson(
-        `/production_batches?select=*,items(name)&order=produced_at.desc&limit=${MAX_ROWS}`,
-        {},
-        auth.token
+      optionalQuery(
+        "production_batches",
+        postgrestJson(
+          `/production_batches?select=*,items!output_item_id(name)&order=produced_at.desc&limit=${MAX_ROWS}`,
+          {},
+          auth.token
+        ),
+        []
       ),
-      postgrestJson(
-        `/production_outputs?select=*,items(name)&limit=${MAX_ROWS}`,
-        {},
-        auth.token
+      optionalQuery(
+        "production_outputs",
+        postgrestJson(`/production_outputs?select=*,items(name)&limit=${MAX_ROWS}`, {}, auth.token),
+        []
       ),
       postgrestJson(
         `/payables?select=*,parties(name)&order=updated_at.desc&limit=${MAX_ROWS}`,
@@ -97,15 +112,23 @@ export async function GET() {
         {},
         auth.token
       ),
-      postgrestJson(
-        `/supplier_returns?select=*,parties(name)&order=return_date.desc&limit=${MAX_ROWS}`,
-        {},
-        auth.token
+      optionalQuery(
+        "supplier_returns",
+        postgrestJson(
+          `/supplier_returns?select=*,parties(name)&order=return_date.desc&limit=${MAX_ROWS}`,
+          {},
+          auth.token
+        ),
+        []
       ),
-      postgrestJson(
-        `/cash_reconciliations?select=*&order=reconciliation_date.desc&limit=${MAX_ROWS}`,
-        {},
-        auth.token
+      optionalQuery(
+        "cash_reconciliations",
+        postgrestJson(
+          `/cash_reconciliations?select=*&order=reconciliation_date.desc&limit=${MAX_ROWS}`,
+          {},
+          auth.token
+        ),
+        []
       ),
     ]);
 

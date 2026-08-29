@@ -61,7 +61,7 @@ export async function GET() {
       ),
       // Recent batches (last 3)
       postgrestJson<Array<{ id: string; batch_code: string; output_qty: string; cogs_per_unit: string; produced_at: string; items: { name: string } }>>(
-        `/production_batches?select=id,batch_code,output_qty,cogs_per_unit,produced_at,items(name)&order=produced_at.desc&limit=3`,
+        `/production_batches?select=id,batch_code,output_qty,cogs_per_unit,produced_at,items!output_item_id(name)&order=produced_at.desc&limit=3`,
         {},
         auth.token
       ),

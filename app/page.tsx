@@ -74,6 +74,46 @@ import { SupplierReturnModal } from "@/components/modals/supplier-return-modal";
 import { CashReconModal } from "@/components/modals/cash-recon-modal";
 import { PartialPaymentModal } from "@/components/modals/partial-payment-modal";
 
+function unitCode(item: Record<string, unknown>) {
+  const units = item.units as { code?: string } | Array<{ code?: string }> | undefined;
+  if (Array.isArray(units)) return String(units[0]?.code || "pcs");
+  return String(units?.code || "pcs");
+}
+
+function mapProduct(item: Record<string, unknown>): Product {
+  return {
+    id: String(item.id),
+    name: String(item.name),
+    category: String(item.category || "Lainnya"),
+    stock: Number(item.stock_qty || 0),
+    unit: unitCode(item),
+    price: Number(item.sale_price || 0),
+    cogs: Number(item.last_cogs || 0),
+    emoji: initials(String(item.name)),
+    active: item.is_active !== false,
+  };
+}
+
+function mapMaterial(item: Record<string, unknown>): Material {
+  return {
+    id: String(item.id),
+    name: String(item.name),
+    stock: Number(item.stock_qty || 0),
+    unit: unitCode(item),
+    lastBuy: Number(item.last_buy_price || 0),
+    supplier: String(item.supplier_name || "Supplier tersimpan"),
+    active: item.is_active !== false,
+  };
+}
+
+function createdId(rows: unknown): string | null {
+  if (Array.isArray(rows) && rows[0] && typeof rows[0] === "object" && rows[0] && "id" in rows[0]) {
+    return String((rows[0] as { id: string }).id);
+  }
+  if (rows && typeof rows === "object" && "id" in rows) return String((rows as { id: string }).id);
+  return null;
+}
+
 const ROLE_ALLOWED_VIEWS: Record<UserRole, View[]> = {
   OWNER: [
     "dashboard",
@@ -274,34 +314,8 @@ export default function Home() {
             paper_width: Number(data.business.paper_width) === 80 ? 80 : 58,
           });
         }
-        if (data.products) {
-          setProducts(
-            data.products.map((item) => ({
-              id: String(item.id),
-              name: String(item.name),
-              category: String(item.category || "Lainnya"),
-              stock: Number(item.stock_qty || 0),
-              unit: String((item.units as { code?: string } | undefined)?.code || "pcs"),
-              price: Number(item.sale_price || 0),
-              cogs: Number(item.last_cogs || 0),
-              emoji: initials(String(item.name)),
-              active: Boolean(item.is_active),
-            }))
-          );
-        }
-        if (data.materials) {
-          setMaterials(
-            data.materials.map((item) => ({
-              id: String(item.id),
-              name: String(item.name),
-              stock: Number(item.stock_qty || 0),
-              unit: String((item.units as { code?: string } | undefined)?.code || "pcs"),
-              lastBuy: Number(item.last_buy_price || 0),
-              supplier: "Supplier tersimpan",
-              active: Boolean(item.is_active),
-            }))
-          );
-        }
+        if (data.products) setProducts(data.products.map(mapProduct));
+        if (data.materials) setMaterials(data.materials.map(mapMaterial));
         if (data.receivables) {
           setReceivables(
             data.receivables.map((item) => ({
@@ -464,7 +478,9 @@ export default function Home() {
           );
         }
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        notify(error instanceof Error ? error.message : "Gagal memuat data bisnis.", "error");
+      });
 
     // B2B data
     backendRequest<unknown[]>("/api/b2b/sales-orders")
@@ -772,8 +788,9 @@ export default function Home() {
         "error"
       );
 
+    let id = "";
     try {
-      await backendRequest("/api/items", {
+      const rows = await backendRequest<unknown>("/api/items", {
         method: "POST",
         body: JSON.stringify({
           name,
@@ -781,18 +798,24 @@ export default function Home() {
           stock_qty: stock,
           sale_price: kind === "product" ? price : 0,
           last_buy_price: kind === "material" ? price : 0,
+          last_cogs: kind === "material" ? price : 0,
           category: String(form.get("category") || "Lainnya"),
           item_type: kind === "product" ? "PRODUCT" : "RAW_MATERIAL",
         }),
       });
+      id = createdId(rows) || "";
     } catch (error) {
       return notify(error instanceof Error ? error.message : "Item gagal disimpan.", "error");
+    }
+
+    if (!id) {
+      return notify("Item tersimpan tapi ID server tidak kembali. Muat ulang halaman.", "error");
     }
 
     if (kind === "product") {
       setProducts((current) => [
         {
-          id: `p-${Date.now()}`,
+          id,
           name,
           category: String(form.get("category") || "Lainnya"),
           stock,
@@ -808,7 +831,7 @@ export default function Home() {
     } else {
       setMaterials((current) => [
         {
-          id: `m-${Date.now()}`,
+          id,
           name,
           stock,
           unit,
@@ -1584,6 +1607,15 @@ export default function Home() {
     window.setTimeout(() => window.location.reload(), 900);
   };
 
+  const reloadCatalog = async () => {
+    const [productRows, materialRows] = await Promise.all([
+      backendRequest<Array<Record<string, unknown>>>("/api/items?type=product"),
+      backendRequest<Array<Record<string, unknown>>>("/api/items?type=raw"),
+    ]);
+    setProducts((productRows || []).map(mapProduct));
+    setMaterials((materialRows || []).map(mapMaterial));
+  };
+
   const importItems = async (file: File, kind: ImportKind) => {
     const formData = new FormData();
     formData.append("type", kind);
@@ -1598,12 +1630,13 @@ export default function Home() {
       );
       const actualKind = result.type || kind;
       const label = actualKind === "PRODUCT" ? "produk" : "bahan baku";
+      await reloadCatalog();
+      navigate(actualKind === "PRODUCT" ? "products" : "materials");
       const parts = [
         result.imported ? `${result.imported} ${label} baru` : "",
         result.updated ? `${result.updated} diperbarui` : "",
       ].filter(Boolean);
-      notify(`${parts.join(", ") || label} berhasil diimpor. Memuat ulang data...`);
-      window.setTimeout(() => window.location.reload(), 700);
+      notify(`${parts.join(", ") || label} berhasil diimpor.`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Import file gagal.", "error");
     }

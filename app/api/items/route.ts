@@ -3,6 +3,8 @@ import { postgrestJson } from "@/lib/postgrest";
 import { requireOwner, requireSession } from "@/lib/route-auth";
 import { assertCanAddProduct, assertCanAddMaterial } from "@/lib/plan-limits";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const auth = await requireSession();
   if ("error" in auth) return auth.error;
@@ -10,11 +12,12 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const type = url.searchParams.get("type") === "raw" ? "RAW_MATERIAL" : "PRODUCT";
   const search = url.searchParams.get("search") || "";
+  const searchFilter = search ? `&name=ilike.*${encodeURIComponent(search)}*` : "";
 
   try {
     return apiData(
       await postgrestJson(
-        `/items?select=*,units(code,label)&item_type=eq.${type}&is_active=eq.true&name=ilike.*${encodeURIComponent(search)}*&order=name`,
+        `/items?select=*,units(code,label)&item_type=eq.${type}&is_active=eq.true${searchFilter}&order=name`,
         {},
         auth.token
       )
