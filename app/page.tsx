@@ -419,6 +419,12 @@ export default function Home() {
           id: String(item.id),
           name: String(item.name),
           type: String(item.party_type) === "SUPPLIER" ? "SUPPLIER" : "CUSTOMER",
+          kind:
+            String(item.party_type) === "SUPPLIER"
+              ? null
+              : String(item.customer_kind) === "MITRA"
+                ? "MITRA"
+                : "RETAIL",
           phone: String(item.phone || ""),
           address: String(item.address || ""),
           creditLimit: Number(item.credit_limit || 0),
@@ -820,10 +826,11 @@ export default function Home() {
   const createParty = async (
     name: string,
     type: Party["type"],
-    details: Partial<Pick<Party, "phone" | "address" | "creditLimit">> = {}
+    details: Partial<Pick<Party, "phone" | "address" | "creditLimit" | "kind">> = {}
   ) => {
     const cleanName = name.trim();
     if (!cleanName) return null;
+    const kind = type === "SUPPLIER" ? null : details.kind === "MITRA" ? "MITRA" : "RETAIL";
     const existing = parties.find(
       (p) => p.type === type && p.name.toLowerCase() === cleanName.toLowerCase()
     );
@@ -836,6 +843,7 @@ export default function Home() {
         body: JSON.stringify({
           name: cleanName,
           party_type: type,
+          customer_kind: kind,
           phone: details.phone || "",
           address: details.address || "",
           credit_limit: details.creditLimit || 0,
@@ -851,6 +859,7 @@ export default function Home() {
       id,
       name: cleanName,
       type,
+      kind,
       phone: details.phone || "",
       address: details.address || "",
       creditLimit: details.creditLimit || 0,
@@ -863,7 +872,9 @@ export default function Home() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") || "").trim();
-    const type = String(form.get("partyType") || "CUSTOMER") as Party["type"];
+    const rawType = String(form.get("partyType") || "CUSTOMER");
+    const type: Party["type"] = rawType === "SUPPLIER" ? "SUPPLIER" : "CUSTOMER";
+    const kind = rawType === "MITRA" ? "MITRA" : rawType === "SUPPLIER" ? null : "RETAIL";
     const creditLimit = Number(form.get("creditLimit") || 0);
 
     if (!name) return notify("Nama kontak wajib diisi.", "error");
@@ -873,12 +884,15 @@ export default function Home() {
       phone: String(form.get("phone") || ""),
       address: String(form.get("address") || ""),
       creditLimit,
+      kind,
     });
     setModal(null);
     notify(
-      type === "CUSTOMER"
-        ? "Pelanggan baru berhasil ditambahkan."
-        : "Supplier baru berhasil ditambahkan."
+      type === "SUPPLIER"
+        ? "Supplier baru berhasil ditambahkan."
+        : kind === "MITRA"
+          ? "Mitra B2B baru berhasil ditambahkan."
+          : "Pelanggan baru berhasil ditambahkan."
     );
   };
 
@@ -1215,7 +1229,7 @@ export default function Home() {
       (p) => p.type === "CUSTOMER" && p.name.toLowerCase() === customerName.toLowerCase()
     );
     if (!customer) {
-      const created = await createParty(customerName, "CUSTOMER");
+      const created = await createParty(customerName, "CUSTOMER", { kind: "MITRA" });
       if (!created) return;
       customer = created;
     }
@@ -1797,7 +1811,9 @@ export default function Home() {
         <PaymentModal
           total={cartTotal}
           customers={parties.filter((item) => item.type === "CUSTOMER").map((item) => item.name)}
-          onCreateCustomer={async (name) => (await createParty(name, "CUSTOMER"))?.name ?? null}
+          onCreateCustomer={async (name) =>
+            (await createParty(name, "CUSTOMER", { kind: "RETAIL" }))?.name ?? null
+          }
           onClose={() => setModal(null)}
           onPay={handlePayment}
         />
@@ -1816,7 +1832,9 @@ export default function Home() {
         <B2BOrderModal
           customers={parties.filter((p) => p.type === "CUSTOMER")}
           products={products}
-          onCreateCustomer={async (name) => (await createParty(name, "CUSTOMER"))?.name ?? null}
+          onCreateCustomer={async (name) =>
+            (await createParty(name, "CUSTOMER", { kind: "MITRA" }))?.name ?? null
+          }
           onClose={() => setModal(null)}
           onSave={saveB2BOrder}
         />

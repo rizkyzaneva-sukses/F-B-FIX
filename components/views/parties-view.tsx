@@ -14,20 +14,27 @@ export function PartiesView({
   onAdd: () => void;
   onWhatsApp: (phone: string, message: string) => void;
 }) {
-  const [tab, setTab] = useState<"ALL" | "CUSTOMER" | "SUPPLIER">("ALL");
+  const [tab, setTab] = useState<"ALL" | "CUSTOMER" | "MITRA" | "SUPPLIER">("ALL");
 
-  const customers = parties.filter((p) => p.type === "CUSTOMER");
+  const customers = parties.filter((p) => p.type === "CUSTOMER" && p.kind !== "MITRA");
+  const mitra = parties.filter((p) => p.type === "CUSTOMER" && p.kind === "MITRA");
   const suppliers = parties.filter((p) => p.type === "SUPPLIER");
 
   const displayParties =
-    tab === "CUSTOMER" ? customers : tab === "SUPPLIER" ? suppliers : parties;
+    tab === "CUSTOMER"
+      ? customers
+      : tab === "MITRA"
+        ? mitra
+        : tab === "SUPPLIER"
+          ? suppliers
+          : parties;
 
   return (
     <main className="page">
       <PageHeading
         eyebrow="Operasional"
         title="Kontak Pelanggan & Supplier"
-        description="Kelola direktori kontak bisnis untuk penjualan hutang, B2B, dan pembelian bahan."
+        description="Pisahkan pelanggan toko, mitra B2B / grosir, dan supplier bahan."
         action={
           <button className="button button-primary" onClick={onAdd}>
             <Plus size={16} />
@@ -37,9 +44,9 @@ export function PartiesView({
       />
 
       <div className="page-card-grid">
-        <MiniStat label="Total Pelanggan Terdaftar" value={`${customers.length} kontak`} />
-        <MiniStat label="Total Supplier Terdaftar" value={`${suppliers.length} rekanan`} />
-        <MiniStat label="Total Kontak Keseluruhan" value={`${parties.length} entitas`} />
+        <MiniStat label="Pelanggan (toko / POS)" value={`${customers.length} kontak`} />
+        <MiniStat label="Mitra B2B / Grosir" value={`${mitra.length} mitra`} />
+        <MiniStat label="Supplier Bahan" value={`${suppliers.length} rekanan`} />
       </div>
 
       <div className="category-row" style={{ marginTop: 20 }}>
@@ -54,6 +61,12 @@ export function PartiesView({
           onClick={() => setTab("CUSTOMER")}
         >
           Pelanggan ({customers.length})
+        </button>
+        <button
+          className={`category-chip ${tab === "MITRA" ? "active" : ""}`}
+          onClick={() => setTab("MITRA")}
+        >
+          Mitra ({mitra.length})
         </button>
         <button
           className={`category-chip ${tab === "SUPPLIER" ? "active" : ""}`}
@@ -81,9 +94,19 @@ export function PartiesView({
                 <td className="table-primary">{item.name}</td>
                 <td>
                   <span
-                    className={`badge ${item.type === "CUSTOMER" ? "badge-blue" : "badge-emerald"}`}
+                    className={`badge ${
+                      item.type === "SUPPLIER"
+                        ? "badge-emerald"
+                        : item.kind === "MITRA"
+                          ? "badge-amber"
+                          : "badge-blue"
+                    }`}
                   >
-                    {item.type === "CUSTOMER" ? "Pelanggan" : "Supplier"}
+                    {item.type === "SUPPLIER"
+                      ? "Supplier"
+                      : item.kind === "MITRA"
+                        ? "Mitra"
+                        : "Pelanggan"}
                   </span>
                 </td>
                 <td>{item.phone || <span className="table-muted">-</span>}</td>

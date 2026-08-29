@@ -10,8 +10,8 @@ export function PartyModal({
 }) {
   return (
     <Modal
-      title="Tambah Pelanggan / Supplier"
-      description="Simpan kontak bisnis untuk keperluan transaksi kasir, B2B, atau pembelian."
+      title="Tambah Pelanggan / Mitra / Supplier"
+      description="Pilih Pelanggan untuk toko, Mitra untuk B2B / grosir, atau Supplier untuk pembelian bahan."
       onClose={onClose}
     >
       <form onSubmit={onSave}>
@@ -19,7 +19,8 @@ export function PartyModal({
           <div className="field">
             <label htmlFor="partyType">Tipe Kontak *</label>
             <select className="select" id="partyType" name="partyType" defaultValue="CUSTOMER">
-              <option value="CUSTOMER">Pelanggan (Customer)</option>
+              <option value="CUSTOMER">Pelanggan (toko / POS)</option>
+              <option value="MITRA">Mitra (B2B / grosir)</option>
               <option value="SUPPLIER">Pemasok (Supplier)</option>
             </select>
           </div>

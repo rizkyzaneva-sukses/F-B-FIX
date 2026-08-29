@@ -152,7 +152,15 @@ export async function seedBusinessData(businessId: string, userId: string) {
 
   const parties = await insert<Row & { name: string }>("parties", [
     ...SUPPLIERS.map((name) => ({ business_id: businessId, party_type: "SUPPLIER", name, phone: "0812 0000 0000", address: "Bandung" })),
-    ...CUSTOMERS.map((name) => ({ business_id: businessId, party_type: "CUSTOMER", name, phone: "0813 0000 0000", address: "Bandung", credit_limit: 1000000 })),
+    ...CUSTOMERS.map((name, index) => ({
+      business_id: businessId,
+      party_type: "CUSTOMER",
+      customer_kind: index % 2 === 1 ? "MITRA" : "RETAIL",
+      name,
+      phone: "0813 0000 0000",
+      address: "Bandung",
+      credit_limit: 1000000,
+    })),
   ], "id,name");
   const partyId = (name: string) => parties.find((row) => row.name === name)!.id;
   const supplierIds = SUPPLIERS.map(partyId);

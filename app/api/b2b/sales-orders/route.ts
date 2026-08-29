@@ -33,6 +33,7 @@ export async function POST(request: Request) {
           body: JSON.stringify({
             business_id: auth.session.business_id,
             party_type: "CUSTOMER",
+            customer_kind: "MITRA",
             name: String(payload.customer_name),
             phone: "",
             address: "",

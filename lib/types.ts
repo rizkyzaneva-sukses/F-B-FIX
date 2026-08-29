@@ -83,10 +83,13 @@ export type CapitalEntry = {
   notes: string;
 };
 
+export type CustomerKind = "RETAIL" | "MITRA";
+
 export type Party = {
   id: string;
   name: string;
   type: "CUSTOMER" | "SUPPLIER";
+  kind: CustomerKind | null;
   phone: string;
   address: string;
   creditLimit: number;
